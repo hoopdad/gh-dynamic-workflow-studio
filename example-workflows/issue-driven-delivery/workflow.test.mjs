@@ -15,8 +15,23 @@ const makeReport = (overrides = {}) => ({
 const makePlan = () => ({
     status: "ready", summary: "Greeting design", sha, designFile: "docs/design/issue-7.md",
     requirements: [structuredClone(requirement)],
+    uiUx: { enabled: false, reason: "Existing UI patterns are sufficient", task: "", files: [], requirementIds: [] },
     assignments: roles.map((role) => ({
         role, task: `Implement ${role}`, files: [`${role.toLowerCase()}/greeting.mjs`], requirementIds: ["R1"],
+    })),
+});
+const makeUiUxPlan = () => ({
+    ...makePlan(),
+    uiUx: {
+        enabled: true, reason: "Greeting needs a designed interaction", task: "Design the greeting UI",
+        files: ["docs/design/issue-7-ui-ux.md"], requirementIds: ["R1"],
+    },
+});
+const nativeStack = (stack) => ({
+    number: 42, open: true, base: { ref: stack[0].baseBranch },
+    pull_requests: stack.map((entry) => ({
+        number: entry.pullRequestNumber, state: "open", merged_at: null,
+        head: { ref: entry.branch, sha: entry.sha },
     })),
 });
 
@@ -55,6 +70,7 @@ function fixture(handler = () => undefined, ioOverrides = {}, args = {}) {
                 bodies.set(entry.pullRequestNumber, renderStack(bodies.get(entry.pullRequestNumber) ?? "Original PR notes", stack, index));
             }
         },
+        verifyNativeStack: async () => {},
         requestReview: async () => { calls.push("request-review"); },
         review: async () => ({ id: 20, html_url: "https://github.com/example/app/pull/8#pullrequestreview-20" }),
         wait: async () => { calls.push("wait"); },
@@ -159,6 +175,129 @@ test("literal delivery flow fans out all six writers, then gates deployment, E2E
     assert.match(f.bodies.get(8), /Original PR notes/);
     assert.match(f.bodies.get(8), /approval and merge order/);
     assert.equal(f.open.length, 0);
+    assert.ok(!f.calls.some((call) => call.includes(":ui-ux:")));
+});
+
+test("Architect-selected UI/UX design publishes before all writers and is authoritative for Web", async () => {
+    const designSha = "b".repeat(40);
+    const prompts = [];
+    const ancestry = [];
+    const artifacts = [];
+    const f = fixture((label, prompt) => {
+        prompts.push({ label, prompt });
+        if (label === "1:design:Architect") return makeUiUxPlan();
+        if (label.includes(":pr:")) return undefined;
+        return makeReport({ sha: designSha });
+    }, {
+        ancestor: async (base, head) => { ancestry.push([base, head]); },
+        design: async (commit, file) => { artifacts.push([commit, file]); return "# Published design"; },
+    });
+    f.io.head = async (branch) => branch === "feature/issue-7" && f.calls.includes("1:ui-ux:UI/UX Designer") ? designSha : sha;
+    f.io.pull = async () => ({
+        number: 8, body: f.bodies.get(8) ?? "", isCrossRepository: false, state: "OPEN",
+        headRefName: "feature/issue-7", baseRefName: "main", headRefOid: designSha,
+        url: "https://github.com/example/app/pull/8",
+    });
+    assert.equal((await f.run()).status, "done");
+    const designer = prompts.find((item) => item.label === "1:ui-ux:UI/UX Designer").prompt;
+    const web = prompts.find((item) => item.label === "1:develop:Web").prompt;
+    assert.match(designer, /Architect handoff: read docs\/design\/issue-7.md/);
+    assert.match(designer, /not application code/);
+    assert.match(web, /Web MUST implement this design, not substitute its own/);
+    assert.match(web, /Start at b{40}/);
+    assert.match(web, /docs\/design\/issue-7-ui-ux.md/);
+    assert.match(web, /not permission to override them or expand scope/);
+    assert.ok(f.calls.indexOf("1:ui-ux:UI/UX Designer") < f.calls.indexOf("1:develop:Web"));
+    assert.ok(f.calls.indexOf("phase:UI/UX design") < f.calls.indexOf("phase:Develop"));
+    assert.ok(ancestry.some(([base, head]) => base === sha && head === designSha));
+    assert.ok(artifacts.some(([commit, file]) => commit === designSha && file === "docs/design/issue-7-ui-ux.md"));
+});
+
+test("UI/UX selection and artifact ownership are explicit, requirement-linked and disjoint", () => {
+    assert.doesNotThrow(() => validatePlan(makeUiUxPlan(), issue));
+    const missing = makePlan();
+    delete missing.uiUx;
+    assert.throws(() => validatePlan(missing, issue), /explicitly select or skip/);
+    const noReason = makePlan();
+    noReason.uiUx.reason = "";
+    assert.throws(() => validatePlan(noReason, issue), /with a reason/);
+    const skipped = makePlan();
+    skipped.uiUx.files = ["docs/ui.md"];
+    assert.throws(() => validatePlan(skipped, issue), /Skipped UI\/UX/);
+    for (const patch of [{ task: "" }, { files: [] }, { requirementIds: [] }, { requirementIds: ["R99"] }]) {
+        const plan = makeUiUxPlan();
+        Object.assign(plan.uiUx, patch);
+        assert.throws(() => validatePlan(plan, issue), /UI\/UX design needs/);
+    }
+    const inactiveWeb = makeUiUxPlan();
+    inactiveWeb.assignments[0].files = [];
+    assert.throws(() => validatePlan(inactiveWeb, issue), /active Web work/);
+    for (const file of ["docs/design/issue-7.md", "web/greeting.mjs", "docs/**", "../outside.md"]) {
+        const plan = makeUiUxPlan();
+        plan.uiUx.files = [file];
+        assert.throws(() => validatePlan(plan, issue), /Overlapping ownership|exact repository-relative/);
+    }
+    assert.throws(() => validateReport(makeReport({
+        status: "rework", findings: [{ ...finding, owner: "UI/UX Designer" }],
+    }), makePlan()), /existing requirement/);
+});
+
+test("UI/UX failures route through Architect and only a passing designer rerun closes them", async () => {
+    const f = fixture((label) => {
+        if (label.includes(":design:")) return makeUiUxPlan();
+        if (label === "1:ui-ux:UI/UX Designer") return makeReport({
+            status: "rework", findings: [{ ...finding, owner: "UI/UX Designer" }],
+        });
+        return undefined;
+    });
+    assert.equal((await f.run()).status, "done");
+    assert.ok(!f.calls.includes("1:develop:Web"));
+    assert.ok(f.calls.includes("file:ui-ux:R1"));
+    assert.ok(f.calls.includes("2:design:Architect"));
+    assert.ok(f.calls.indexOf("2:ui-ux:UI/UX Designer") < f.calls.indexOf("close:100"));
+    assert.ok(f.calls.indexOf("close:100") < f.calls.indexOf("2:develop:Web"));
+    assert.equal(f.open.length, 0);
+});
+
+test("missing, empty or unpublished UI/UX handoffs never reach Web or deployment", async () => {
+    for (const mode of ["null", "missing", "empty", "unpublished"]) {
+        const f = fixture((label) => {
+            if (label.includes(":design:")) return makeUiUxPlan();
+            if (label === "1:ui-ux:UI/UX Designer") {
+                if (mode === "null") return null;
+                if (mode === "unpublished") return makeReport({ sha: "b".repeat(40) });
+            }
+            return undefined;
+        }, {
+            design: async (commit, file) => {
+                if (mode === "missing" && file.includes("ui-ux")) throw new Error("Missing UI/UX artifact");
+                return mode === "empty" && file.includes("ui-ux") ? "" : "# Design";
+            },
+            ancestor: async (base) => {
+                if (mode === "unpublished" && base === "b".repeat(40)) throw new Error("Unpublished UI/UX commit");
+            },
+        });
+        if (mode === "empty") assert.equal((await f.run()).status, "blocked");
+        else await assert.rejects(f.run(), mode === "null" ? /invalid output/ : /Missing UI\/UX|Unpublished UI\/UX/);
+        assert.ok(!f.calls.includes("1:develop:Web"));
+        assert.ok(!f.calls.includes("1:deploy-1:DevOps"));
+    }
+});
+
+test("repair rounds cannot silently drop an already authoritative UI/UX handoff", async () => {
+    const f = fixture((label) => {
+        if (label === "1:design:Architect") return makeUiUxPlan();
+        if (label === "1:local:Test") return makeReport({ status: "rework", findings: [finding] });
+        return undefined;
+    });
+    const result = await f.run();
+    assert.equal(result.status, "blocked");
+    assert.match(result.summary, /UI\/UX design cannot be skipped/);
+    assert.ok(!f.calls.includes("2:develop:Web"));
+    const recovering = fixture();
+    recovering.open.push({ number: 100, body: "\nStage: ui-ux\nOwner: UI/UX Designer\n" });
+    assert.equal((await recovering.run()).status, "blocked");
+    assert.ok(!recovering.calls.includes("1:develop:Web"));
 });
 
 test("empty queue does not launch agents or deploy", async () => {
@@ -299,9 +438,10 @@ test("pending Copilot review is blocked, not done; a later run can complete and 
     assert.equal(f.calls.filter((call) => call === "wait").length, 2);
     assert.ok(f.calls.includes("file:review-wait:DELIVERY"));
     assert.ok(!f.calls.includes("1:review:Architect"));
-    f.io.review = async () => ({ id: 20, html_url: "https://github.com/example/app/pull/8#review-20" });
-    assert.equal((await f.run()).status, "done");
-    assert.equal(f.open.length, 0);
+    const recovered = fixture();
+    recovered.open.push(...f.open);
+    assert.equal((await recovered.run()).status, "done");
+    assert.equal(recovered.open.length, 0);
 });
 
 test("review requires the actual candidate PR and final branch freshness", async () => {
@@ -544,12 +684,55 @@ test("a failed final stack publication never dequeues the feature and can replay
     assert.equal(f.calls.filter((call) => call === "finish").length, 1);
 });
 
+test("resuming a completed queue never republishes an earlier prefix over registered descendants", async () => {
+    const f = queueFixture();
+    const publish = f.io.publishStack;
+    let remoteSize = 0;
+    f.io.publishStack = async (stack) => {
+        assert.ok(stack.length >= remoteSize, "Cannot overwrite a native stack with an earlier prefix");
+        remoteSize = stack.length;
+        await publish(stack);
+    };
+    const first = await f.run();
+    const agents = [...f.scopedCalls];
+    const publications = f.calls.filter((call) => call === "stack").length;
+    assert.deepEqual(await f.run(), first);
+    assert.deepEqual(f.scopedCalls, agents);
+    assert.equal(f.calls.filter((call) => call === "stack").length, publications);
+    f.io.verifyNativeStack = async () => { throw new Error("Native stack dissolved"); };
+    await assert.rejects(f.run(), /Native stack dissolved/);
+});
+
+test("resuming after a child's failed publication skips completed predecessors and revalidates the full stack", async () => {
+    const f = queueFixture();
+    const publish = f.io.publishStack;
+    let remoteSize = 0;
+    let failed = false;
+    f.io.publishStack = async (stack) => {
+        assert.ok(stack.length >= remoteSize);
+        remoteSize = stack.length;
+        await publish(stack);
+        if (stack.length === 2 && stack.at(-1).status === "ready" && !failed) {
+            failed = true;
+            throw new Error("Child publication failed");
+        }
+    };
+    await assert.rejects(f.run(), /Child publication failed/);
+    assert.ok(f.calls.includes("finish:7"));
+    assert.ok(!f.calls.includes("finish:9"));
+    const priorCalls = f.scopedCalls.filter((label) => label.startsWith("issue-7:")).length;
+    assert.equal((await f.run()).status, "done");
+    assert.equal(f.scopedCalls.filter((label) => label.startsWith("issue-7:")).length, priorCalls);
+    assert.ok(f.calls.includes("finish:9"));
+});
+
 test("GitHub adapter writes stack descriptions through stdin and refuses changed PRs", async () => {
     const f = queueFixture();
     const { stack } = await f.run();
     const writes = [];
     let changed = false;
     const io = githubIO(async (program, args, input) => {
+        if (args[0] === "api") return JSON.stringify([[nativeStack(stack)]]);
         if (args[1] === "view") {
             const entry = stack.find((item) => item.pullRequestNumber === Number(args[2]));
             return JSON.stringify({ body: "Human notes", headRefOid: changed ? "e".repeat(40) : entry.sha, baseRefName: entry.baseBranch, state: "OPEN" });
@@ -565,6 +748,121 @@ test("GitHub adapter writes stack descriptions through stdin and refuses changed
     changed = true;
     await assert.rejects(io.publishStack(stack), /Stack changed while publishing/);
     assert.equal(writes.length, 2);
+});
+
+function nativeAdapter(stack, initial = []) {
+    const calls = [];
+    let remote = structuredClone(initial);
+    let fail = false;
+    const io = githubIO(async (program, args, input) => {
+        calls.push({ program, args, input });
+        if (args[0] !== "api") {
+            const entry = stack.find((item) => item.pullRequestNumber === Number(args[2]));
+            return args[1] === "view" ? JSON.stringify({
+                body: "Human notes", headRefOid: entry.sha, baseRefName: entry.baseBranch, state: "OPEN",
+            }) : "";
+        }
+        assert.ok(args.includes("Accept: application/vnd.github+json"));
+        assert.ok(args.includes("X-GitHub-Api-Version: 2026-03-10"));
+        if (!args.includes("POST")) return JSON.stringify([remote]);
+        if (fail) throw new Error("Stack API unavailable");
+        assert.deepEqual(args.slice(-2), ["--input", "-"]);
+        const numbers = JSON.parse(input).pull_requests;
+        const endpoint = args.find((item) => item.startsWith("repos/"));
+        const entries = stack.filter((entry) => numbers.includes(entry.pullRequestNumber));
+        if (endpoint.endsWith("/add")) {
+            assert.equal(endpoint, "repos/{owner}/{repo}/stacks/42/add");
+            remote[0].pull_requests.push(...nativeStack(entries).pull_requests);
+        } else {
+            assert.equal(endpoint, "repos/{owner}/{repo}/stacks");
+            remote = [nativeStack(entries)];
+        }
+        return JSON.stringify(remote[0]);
+    });
+    return { io, calls, setRemote: (value) => { remote = value; }, fail: () => { fail = true; } };
+}
+
+test("native stack API creates bottom-up, verifies readback and is idempotent on replay", async () => {
+    const { stack } = await queueFixture().run();
+    const f = nativeAdapter(stack);
+    await f.io.publishStack(stack);
+    await f.io.publishStack(stack);
+    await f.io.verifyNativeStack(stack);
+    const posts = f.calls.filter((call) => call.args.includes("POST"));
+    assert.equal(posts.length, 1);
+    assert.deepEqual(JSON.parse(posts[0].input), { pull_requests: [8, 10] });
+    assert.ok(f.calls.findIndex((call) => call.args.includes("POST")) < f.calls.findIndex((call) => call.args[1] === "edit"));
+    assert.ok(f.calls.filter((call) => call.args[0] === "api" && !call.args.includes("POST"))
+        .every((call) => call.args.includes("--paginate") && call.args.includes("--slurp")));
+});
+
+test("native stack registration waits for two PRs and appends only the missing suffix", async () => {
+    const { stack } = await queueFixture().run();
+    const singleton = nativeAdapter(stack.slice(0, 1));
+    await singleton.io.publishStack(stack.slice(0, 1));
+    await singleton.io.verifyNativeStack(stack.slice(0, 1));
+    assert.ok(!singleton.calls.some((call) => call.args.includes("POST")));
+    const third = {
+        ...stack[1], issueNumber: 11, branch: "feature/issue-11", baseBranch: stack[1].branch,
+        pullRequestNumber: 12, sha: "c".repeat(40), baseSha: stack[1].sha,
+    };
+    const extended = [...stack, third];
+    const f = nativeAdapter(extended, [nativeStack(stack)]);
+    await f.io.publishStack(extended);
+    assert.deepEqual(JSON.parse(f.calls.find((call) => call.args.includes("POST")).input), { pull_requests: [12] });
+    await f.io.publishStack(extended);
+    assert.equal(f.calls.filter((call) => call.args.includes("POST")).length, 1);
+    const missingPredecessors = nativeAdapter(extended);
+    await assert.rejects(missingPredecessors.io.publishStack(extended), /lost accepted predecessors/);
+    assert.ok(!missingPredecessors.calls.some((call) => call.args.includes("POST")));
+});
+
+test("native membership drift, unavailable API and incorrect readback cannot produce ready metadata", async () => {
+    const { stack } = await queueFixture().run();
+    for (const mode of ["missing", "order", "sha", "base", "closed", "extra", "duplicate"]) {
+        const remote = nativeStack(stack);
+        if (mode === "order") remote.pull_requests.reverse();
+        if (mode === "sha") remote.pull_requests[0].head.sha = "e".repeat(40);
+        if (mode === "base") remote.base.ref = "other";
+        if (mode === "closed") remote.open = false;
+        if (mode === "extra") remote.pull_requests.push({ ...remote.pull_requests[1], number: 12 });
+        const f = nativeAdapter(stack, mode === "missing" ? [] : mode === "duplicate" ? [remote, remote] : [remote]);
+        await assert.rejects(f.io.verifyNativeStack(stack), /native GitHub stack|Native GitHub stack/);
+        if (mode !== "missing") {
+            await assert.rejects(f.io.publishStack(stack), /native GitHub stack|Native GitHub stack/);
+            assert.ok(!f.calls.some((call) => call.args[1] === "edit"));
+        }
+    }
+    const unavailable = nativeAdapter(stack);
+    unavailable.fail();
+    await assert.rejects(unavailable.io.publishStack(stack), /Stack API unavailable/);
+    assert.ok(!unavailable.calls.some((call) => call.args[1] === "edit"));
+    let posts = 0;
+    const staleReadback = githubIO(async (program, args) => {
+        if (args.includes("POST")) { posts++; return "{}"; }
+        return "[[]]";
+    });
+    await assert.rejects(staleReadback.publishStack(stack), /Native GitHub stack is missing/);
+    assert.equal(posts, 1);
+});
+
+test("native continuation permits one pending child only for explicit recovery of that issue", async () => {
+    const { stack } = await queueFixture().run();
+    const f = nativeAdapter(stack, [nativeStack(stack)]);
+    await assert.rejects(f.io.verifyNativeStack(stack.slice(0, 1)), /membership changed/);
+    await assert.rejects(f.io.verifyNativeStack(stack.slice(0, 1), 11), /membership changed/);
+    await f.io.verifyNativeStack(stack.slice(0, 1), 9);
+    await f.io.verifyNativeStack(stack, 10);
+});
+
+test("native stack verification failure stops intake before any next-issue agent or dequeue", async () => {
+    const f = queueFixture();
+    f.io.verifyNativeStack = async (stack) => {
+        if (stack.length) throw new Error("Native GitHub stack membership changed");
+    };
+    await assert.rejects(f.run(), /Native GitHub stack membership changed/);
+    assert.ok(!f.calls.includes("finish:7"));
+    assert.ok(!f.scopedCalls.some((label) => label.startsWith("issue-9:")));
 });
 
 test("the command runner streams large PR descriptions through stdin and propagates process failures", async () => {

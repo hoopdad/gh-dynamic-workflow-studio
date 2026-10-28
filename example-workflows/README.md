@@ -8,7 +8,7 @@ distribution do not depend on them.
 
 | Workflow | Installation guide | Purpose |
 | --- | --- | --- |
-| `issue-driven-delivery` | [README](issue-driven-delivery/README.md) | Drain the ready issue queue through Architect, parallel tiers, tests/deployment and ordered stacked GitHub PRs |
+| `issue-driven-delivery` | [README](issue-driven-delivery/README.md) | Drain the ready issue queue through Architect, optional authoritative UI/UX design, parallel tiers, tests/deployment and native GitHub stacked PRs |
 
 ## Install through an AI agent
 

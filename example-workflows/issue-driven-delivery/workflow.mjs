@@ -8,13 +8,15 @@ import { finished } from "node:stream/promises";
 
 const exec = promisify(execFile);
 export const roles = ["Web", "API", "Infrastructure", "Agent", "Test", "DevOps"];
+const designerRole = "UI/UX Designer";
+const findingOwners = [...roles, designerRole];
 const isSha = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const string = { type: "string" };
 const strings = { type: "array", items: string };
 const object = (properties) => ({ type: "object", properties, required: Object.keys(properties) });
 const array = (items) => ({ type: "array", items });
 const findingSchema = object({
-    requirementId: string, owner: { type: "string", enum: roles },
+    requirementId: string, owner: { type: "string", enum: findingOwners },
     check: string, expected: string, actual: string, evidence: string,
 });
 const reportSchema = object({
@@ -25,6 +27,9 @@ const planSchema = object({
     status: { type: "string", enum: ["ready", "blocked"] }, summary: string,
     sha: string, designFile: string,
     requirements: array(object({ id: string, text: string })),
+    uiUx: object({
+        enabled: { type: "boolean" }, reason: string, task: string, files: strings, requirementIds: strings,
+    }),
     assignments: array(object({
         role: { type: "string", enum: roles }, task: string, files: strings, requirementIds: strings,
     })),
@@ -71,6 +76,22 @@ export function validatePlan(plan, issue) {
         }
         for (const file of assignment.files) own(file, assignment.role);
     }
+    const design = plan.uiUx;
+    if (!design || typeof design.enabled !== "boolean" || !design.reason?.trim()
+        || !Array.isArray(design.files) || !Array.isArray(design.requirementIds)
+        || typeof design.task !== "string") {
+        throw new Error("Architect must explicitly select or skip UI/UX design with a reason");
+    }
+    if (design.enabled) {
+        if (!design.task.trim() || !design.files.length || !design.requirementIds.length
+            || design.requirementIds.some((id) => !ids.has(id))
+            || !plan.assignments.find((assignment) => assignment.role === "Web").files.length) {
+            throw new Error("UI/UX design needs a task, owned artifacts, existing requirement IDs and active Web work");
+        }
+        for (const file of design.files) own(file, designerRole);
+    } else if (design.task.trim() || design.files.length || design.requirementIds.length) {
+        throw new Error("Skipped UI/UX design must have no task, files or requirement IDs");
+    }
     return plan;
 }
 
@@ -84,7 +105,8 @@ export function validateReport(report, plan, sha) {
     const ids = new Set(plan.requirements.map((requirement) => requirement.id));
     for (const finding of report.findings) {
         if ((!ids.has(finding.requirementId) && finding.requirementId !== "DELIVERY")
-            || !roles.includes(finding.owner)
+            || !findingOwners.includes(finding.owner)
+            || (finding.owner === designerRole && !plan.uiUx.enabled)
             || ["check", "expected", "actual", "evidence"].some((key) => !finding[key].trim())) {
             throw new Error("Finding must cite an existing requirement and reproducible evidence");
         }
@@ -143,6 +165,7 @@ Do not merge a child before its predecessor. These links document order; they do
 | --- | --- | --- | --- | --- |
 ${rows}
 
+GitHub native stack membership is managed through the stacked pull requests REST API once two PRs exist.
 If a predecessor changes, is merged, or is retargeted, stop for restacking and revalidation.
 ${metadataPrefix}${JSON.stringify(metadata)} -->
 ${stackEnd}`;
@@ -207,6 +230,52 @@ async function loadStack(io, number, defaultBranch) {
 export function githubIO(run, signal) {
     const gh = async (...args) => JSON.parse(await run("gh", args));
     const api = async (endpoint) => (await gh("api", "--paginate", "--slurp", endpoint)).flat();
+    const stackHeaders = ["-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2026-03-10"];
+    const nativeStacks = async (number) => (await gh("api", "--paginate", "--slurp", ...stackHeaders,
+        `repos/{owner}/{repo}/stacks?pull_request=${number}&per_page=100`)).flat();
+    function checkNativeStack(remote, stack, { publishing = false, pendingIssueNumber = 0 } = {}) {
+        if (!remote) {
+            if (stack.length > 1 && !publishing) throw new Error("Native GitHub stack is missing; relink and revalidate before continuing");
+            return;
+        }
+        if (!Number.isSafeInteger(remote.number) || remote.number < 1 || remote.open !== true
+            || remote.base?.ref !== stack[0].baseBranch || !Array.isArray(remote.pull_requests)
+            || remote.pull_requests.length < 2) throw new Error("Invalid native GitHub stack");
+        const members = remote.pull_requests;
+        const recovering = pendingIssueNumber > 0 && members.length === stack.length + 1
+            && members.at(-1).head?.ref === `feature/issue-${pendingIssueNumber}`
+            && members.at(-1).state === "open" && members.at(-1).merged_at === null;
+        if ((members.length > stack.length && !recovering)
+            || (members.length < stack.length && !publishing)) {
+            throw new Error("Native GitHub stack membership changed; revalidate before continuing");
+        }
+        for (const [index, member] of members.slice(0, stack.length).entries()) {
+            const entry = stack[index];
+            if (member.number !== entry.pullRequestNumber || member.head?.ref !== entry.branch
+                || member.head?.sha !== entry.sha || member.state !== "open" || member.merged_at !== null) {
+                throw new Error("Native GitHub stack order or tested commit changed; revalidate before continuing");
+            }
+        }
+    }
+    async function readNativeStack(stack) {
+        const found = await nativeStacks(stack[0].pullRequestNumber);
+        if (found.length > 1) throw new Error("PR belongs to multiple native GitHub stacks");
+        return found[0];
+    }
+    async function publishNativeStack(stack) {
+        const remote = await readNativeStack(stack);
+        if (stack.length > 2 && (!remote || remote.pull_requests?.length < stack.length - 1)) {
+            throw new Error("Native GitHub stack lost accepted predecessors; relink and revalidate before continuing");
+        }
+        checkNativeStack(remote, stack, { publishing: true });
+        const missing = stack.slice(remote?.pull_requests.length ?? 0).map((entry) => entry.pullRequestNumber);
+        if (stack.length > 1 && missing.length) {
+            const endpoint = remote ? `stacks/${remote.number}/add` : "stacks";
+            await run("gh", ["api", "--method", "POST", ...stackHeaders,
+                `repos/{owner}/{repo}/${endpoint}`, "--input", "-"], JSON.stringify({ pull_requests: missing }));
+        }
+        checkNativeStack(await readNativeStack(stack), stack);
+    }
     return {
         repository: () => gh("repo", "view", "--json", "nameWithOwner,defaultBranchRef"),
         select: async (number, label, excluded = []) => {
@@ -246,7 +315,11 @@ export function githubIO(run, signal) {
             .filter((review) => review.user?.login === "copilot-pull-request-reviewer[bot]"
                 && review.commit_id === sha && review.submitted_at && review.state !== "DISMISSED").at(-1),
         pull: (number) => gh("pr", "view", String(number), "--json", "number,url,headRefOid,headRefName,baseRefName,state,body,isCrossRepository"),
+        verifyNativeStack: async (stack, pendingIssueNumber = 0) => {
+            if (stack.length) checkNativeStack(await readNativeStack(stack), stack, { pendingIssueNumber });
+        },
         publishStack: async (stack) => {
+            await publishNativeStack(stack);
             for (const [index, entry] of stack.entries()) {
                 const pull = await gh("pr", "view", String(entry.pullRequestNumber), "--json", "body,headRefOid,baseRefName,state");
                 if (pull.state !== "OPEN" || pull.headRefOid !== entry.sha || pull.baseRefName !== entry.baseBranch) {
@@ -291,7 +364,7 @@ export const deliveryWorkflow = {
     meta: {
         name: "issue-driven-delivery",
         description: "Deliver ready issues until the queue is empty, with tested feature branches and ordered stacked GitHub PRs.",
-        phases: ["Scan", "Design", "Develop", "Local tests", "Deploy and smoke", "Deployed E2E", "Review", "Stack"].map((title) => ({ title })),
+        phases: ["Scan", "Design", "UI/UX design", "Develop", "Local tests", "Deploy and smoke", "Deployed E2E", "Review", "Stack"].map((title) => ({ title })),
         limits: { maxConcurrentSubagents: 6 },
         argsSchema: object({
             deploymentTarget: string,
@@ -320,38 +393,50 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         || [maxRounds, maxDeploymentAttempts, reviewPolls].some((n) => !Number.isSafeInteger(n) || n < 1)) {
         throw new Error("Supply an explicit deploymentTarget, nonempty readyLabel and positive integer budgets");
     }
-    const repo = await ctx.step("v2:repository", () => io.repository());
-    const stack = stackAfter ? await ctx.step("v2:initial-stack",
+    const repo = await ctx.step("v3:repository", () => io.repository());
+    const stack = stackAfter ? await ctx.step("v3:initial-stack",
         () => loadStack(io, stackAfter, repo.defaultBranchRef.name)) : [];
     for (let position = 0; ; position++) {
         await verifyStack(io, stack);
         ctx.phase("Scan");
-        const issue = await ctx.step(`v2:selection:${position}`,
+        const issue = await ctx.step(`v3:selection:${position}`,
             () => io.select(position === 0 ? issueNumber : 0, readyLabel, stack.map((entry) => entry.issueNumber)));
-        if (!issue) return {
-            status: stack.length ? "done" : "idle", stack, stackAfter: stack.at(-1)?.pullRequestNumber ?? 0,
-            summary: stack.length ? "Ready queue is empty; review/approve and merge the PR stack bottom-up. No PR was merged." : "No eligible issue; no work started",
-        };
+        if (!issue) {
+            await io.verifyNativeStack(stack);
+            return {
+                status: stack.length ? "done" : "idle", stack, stackAfter: stack.at(-1)?.pullRequestNumber ?? 0,
+                summary: stack.length ? "Ready queue is empty; review/approve and merge the PR stack bottom-up. No PR was merged." : "No eligible issue; no work started",
+            };
+        }
         if (issue.state.toUpperCase() !== "OPEN") throw new Error("Selected issue is not open");
         if (stack.some((entry) => entry.issueNumber === issue.number)) throw new Error("Selected issue is already in this PR stack");
         const previous = stack.at(-1);
         const baseBranch = previous?.branch ?? repo.defaultBranchRef.name;
-        const baseSha = await ctx.step(`v2:base:${issue.number}`, () => io.head(baseBranch));
+        const baseSha = await ctx.step(`v3:base:${issue.number}`, () => io.head(baseBranch));
         if (previous && baseSha !== previous.sha) throw new Error("Stack tip changed before starting the next issue");
-        const result = await runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, maxRounds, maxDeploymentAttempts, reviewPolls });
+        const result = await ctx.step(`v3:delivery:${issue.number}`, async () => {
+            await io.verifyNativeStack(stack, position === 0 ? issueNumber : issue.number);
+            const delivered = await runIssue(ctx, io, {
+                repo, issue, stack, baseBranch, baseSha, deploymentTarget, maxRounds, maxDeploymentAttempts, reviewPolls,
+            });
+            if (delivered.status !== "ready") return delivered;
+            const nextStack = [...stack, delivered];
+            await verifyStack(io, nextStack);
+            await io.verifyNativeStack(nextStack);
+            ctx.phase("Stack");
+            await io.publishStack(nextStack);
+            await verifyStack(io, nextStack);
+            await io.verifyNativeStack(nextStack);
+            await ctx.step(`v3:finish:${issue.number}`, async () => { await io.finish(issue.number, readyLabel); return issue.number; });
+            return delivered;
+        });
         if (result.status !== "ready") return { ...result, stack, stackAfter: previous?.pullRequestNumber ?? 0 };
-        const nextStack = [...stack, result];
-        await verifyStack(io, nextStack);
-        ctx.phase("Stack");
-        await io.publishStack(nextStack);
-        await verifyStack(io, nextStack);
-        await ctx.step(`v2:finish:${issue.number}`, async () => { await io.finish(issue.number, readyLabel); return issue.number; });
         stack.push(result);
     }
 }
 
 async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, maxRounds, maxDeploymentAttempts, reviewPolls }) {
-    const step = (key, producer) => ctx.step(`v2:issue:${issue.number}:${key}`, producer);
+    const step = (key, producer) => ctx.step(`v3:issue:${issue.number}:${key}`, producer);
     const branch = `feature/issue-${issue.number}`;
     const label = `delivery:issue-${issue.number}`;
     await step("scope-label", async () => { await io.label(label); return label; });
@@ -363,6 +448,7 @@ async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, depl
         return { status: "blocked", issue: issue.url, branch, summary };
     };
     let plan;
+    let uiUxSelected = false;
     async function agent(role, stage, prompt, schema = reportSchema) {
         const result = await ctx.agent(`${rules}\n${identity}\nRole: ${role}\n${prompt}`,
             { label: `issue-${issue.number}:${stage}:${role}`, schema });
@@ -397,6 +483,13 @@ Identify every affected tier, folder and exact existing/new file, contracts, dep
 test commands and deploy/rollback commands. Quote explicit parent requirements verbatim with stable IDs.
 Assign disjoint exact file sets to ALL six roles, including shared contracts, manifests, lockfiles, generated
 files, test fixtures and delivery scripts. You own only the design document. No other overlapping writers.
+Decide per issue whether UI/UX design is needed before Web implementation. Return uiUx with enabled and
+an explicit reason, even when skipping. If enabled, assign the UI/UX Designer a narrow task, existing
+requirement IDs and disjoint exact design artifact paths (not implementation files). Web must be active.
+Once selected, keep UI/UX design enabled through repair rounds and resolve designer findings before Web.
+The designer receives your plan and publishes before any tier starts. Its UI/UX design is authoritative
+for Web within the parent requirements, your contracts and existing policies. Do not invent scope.
+If skipped, return task:"", files:[] and requirementIds:[]; explain why in reason.
 Keep interfaces fixed during this round; communicate changes via the design, not peer file edits.
 Omit implementation of unaffected tiers with files:[] and explain why. Test and DevOps remain active.
 Test owns local/unit/integration tests, local E2E, deployed E2E and post-deploy smoke tests.
@@ -404,6 +497,11 @@ DevOps owns scan/lint/format checks and deployment orchestration, honoring the p
 GitHub Actions OR local scripts/tools. Do not introduce a competing delivery stack.
 Provide each role a narrow assignment and requirement IDs. If scope is ambiguous, return blocked.
 Return the published design commit SHA and document path.`, planSchema), issue);
+        if (!plan.uiUx.enabled && (uiUxSelected || outstanding.some((item) =>
+            item.body?.includes("\nStage: ui-ux\n") || item.body?.includes("\nOwner: UI/UX Designer\n")))) {
+            return blocked("UI/UX design cannot be skipped after selection or while designer repair issues remain");
+        }
+        uiUxSelected ||= plan.uiUx.enabled;
         const requirements = await step("requirements", () => plan.requirements);
         if (plan.requirements.length !== requirements.length
             || plan.requirements.some((item) => !requirements.some((original) => original.id === item.id && original.text === item.text))) {
@@ -412,12 +510,45 @@ Return the published design commit SHA and document path.`, planSchema), issue);
         await io.ancestor(plan.sha, await io.head(branch));
         await io.ancestor(baseSha, plan.sha);
         if (!(await io.design(plan.sha, plan.designFile)).trim()) return blocked("Published design document is empty");
+        let developmentSha = plan.sha;
+        let uiUxHandoff = "Architect skipped UI/UX design: " + plan.uiUx.reason;
+        if (plan.uiUx.enabled) {
+            ctx.phase("UI/UX design");
+            const design = validateReport(await agent(designerRole, `${round}:ui-ux`, `${writerRules}
+BRANCH=${branch}. Start at ${plan.sha}. Worktree: ${path.join(worktreeRoot, `ui-ux-${round}`)}.
+Architect handoff: read ${plan.designFile} and the parent issue. Your assignment is ${JSON.stringify(plan.uiUx)}.
+Read open scoped UI/UX Designer repair issues. Publish only your owned design artifacts, not application code.
+Specify requirement-linked flows, layouts, components, interaction states, responsive behavior and accessibility
+within the issue's scope and repository policies. Do not change Architect's contracts or add acceptance criteria.
+Your published UI/UX design is authoritative for Web. Make the handoff concrete enough to implement.
+If requirements or architecture conflict, return an evidenced blocker for Architect rather than guessing.
+Commit and push all assigned artifacts before returning pass, with the published commit SHA and evidence.`), plan);
+            if (design.status === "pass") {
+                developmentSha = await io.head(branch);
+                await io.ancestor(plan.sha, design.sha);
+                await io.ancestor(design.sha, developmentSha);
+                for (const file of plan.uiUx.files) {
+                    if (!(await io.design(developmentSha, file)).trim()) return blocked(`Published UI/UX design artifact is empty: ${file}`);
+                }
+                uiUxHandoff = `Authoritative UI/UX design at ${developmentSha}: ${JSON.stringify(plan.uiUx.files)}.
+Read these published artifacts before implementation. Web MUST implement this design, not substitute its own
+UI/UX choices. It is authoritative within the quoted parent requirements, Architect's contracts and existing
+policies, not permission to override them or expand scope. Conflicts or missing detail block for Architect
+replanning; never silently diverge. Only the UI/UX Designer may edit these artifacts.`;
+            }
+            await reconcile("ui-ux", design);
+            if (design.status !== "pass") {
+                outstanding = await io.issues(repo.nameWithOwner, label);
+                continue;
+            }
+        }
         ctx.phase("Develop");
         const active = plan.assignments.filter((assignment) => assignment.files.length);
         const reports = await ctx.parallel(active.map((assignment) => async () => {
             const report = await agent(assignment.role, `${round}:develop`, `${writerRules}
-BRANCH=${branch}. Start at ${plan.sha}. Worktree: ${path.join(worktreeRoot, `${assignment.role.toLowerCase()}-${round}`)}.
+BRANCH=${branch}. Start at ${developmentSha}. Worktree: ${path.join(worktreeRoot, `${assignment.role.toLowerCase()}-${round}`)}.
 Read ${plan.designFile} and the parent issue; your assignment is ${JSON.stringify(assignment)}.
+${uiUxHandoff}
 Read the open scoped repair issues for your role as well; implement their requirement-linked fixes.
 Implement independently. Stay within these exact owned files, including any new files.
 If another file is needed, return an evidenced blocker for Architect replanning rather than editing it.
@@ -437,6 +568,7 @@ an operational blocker uses DELIVERY. Pass evidence includes your commit and suc
         let sha = await io.head(branch);
         for (const item of reports) await io.ancestor(item.report.sha, sha);
         const candidate = () => `Candidate ${sha}; branch ${branch}; design ${plan.designFile}.
+${uiUxHandoff}
 Requirements: ${JSON.stringify(plan.requirements)}. Check out this exact commit in your own isolated worktree
 under ${worktreeRoot}. Evaluation is read-only except build/test outputs: do not modify tracked tests,
 source or configuration. Verify a clean tracked worktree before and after each evaluation.
@@ -492,6 +624,7 @@ Do not invent requirements or infer them from patterns/standards elsewhere. Miss
 Create or reuse ONE open PR from ${branch} into ${baseBranch}, linking parent ${issue.url},
 design, requirement/test evidence and deployment evidence. Do not merge or close the parent.
 Use this exact base so reviewers see only this feature's diff, not all preceding features.
+The workflow registers native GitHub stack membership via REST; do not create or alter stack membership yourself.
 Return its number.`, object({ number: { type: "integer" } }));
         if (!Number.isSafeInteger(pr.number) || pr.number < 1) throw new Error("Architect returned an invalid PR number");
         const pull = await io.pull(pr.number);

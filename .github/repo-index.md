@@ -25,9 +25,15 @@
   registers the SDK workflow; `workflow.mjs` owns orchestration, GitHub adapter,
   structural ownership/requirement guards and role prompts. Its README covers
   the AI installation contract, concurrent same-branch writers and critique.
+  Architect explicitly selects/skips UI/UX Designer per issue. When enabled,
+  its disjoint, published design artifacts gate the six-writer fan-out and are
+  authoritative for Web within issue scope, architecture contracts and policy.
   The runner drains ready issues sequentially, scopes journals/worktrees per
   issue, stacks PR bases on accepted predecessor branches and publishes ordered
-  approval/merge metadata in PR bodies. `stackAfter` validates continuation;
+  approval/merge metadata in PR bodies. `githubIO` registers native GitHub
+  stacks via versioned REST create/add/read endpoints through `gh api` once
+  two PRs exist; metadata tables supplement, not replace, native membership.
+  `stackAfter` validates continuation;
   pending or changed parent PRs cannot silently admit a new feature.
   Its dependency-free `install.mjs` requires an explicit target Git root and
   copies only the two runtime modules; it never runs the workflow or changes
@@ -67,6 +73,13 @@ root test addition and restored the root README/check script; no application,
 distribution, dependency or Studio control-plane changes. Examples use the
 experimental `defineWorkflow` API and must be explicitly installed/registered
 in a target repository; Studio remains read-only.
-The example's queue/stack revision keeps the same two-module runtime payload;
-stack order uses ordinary GitHub PR base/head relationships, not a new SDK/API
-dependency. Intake ends at an empty queue or blocker, never by merging PRs.
+2026-10-28: reviewed through `9937041` plus native-stack/UI/UX changes.
+The example keeps the same two-module runtime payload and six-writer limit.
+Native stacks require the GitHub stacked-PR REST API (`2026-03-10`), with no
+additional npm or CLI extension dependency. Native membership/order/SHA drift
+fails closed; explicit recovery may reuse one pending trailing child.
+Journal v3 caches completed issue deliveries to avoid replaying earlier
+prefixes over native descendants and rechecks the full stack before `done`.
+UI/UX selection/artifact and native-stack/replay tests remain colocated.
+No paths added/deleted; Studio runtime and distribution are unchanged.
+Intake ends at an empty queue or blocker, never by merging PRs.

@@ -23,9 +23,22 @@ not recommendations. Creating these files does not install or run the workflow.
    contract and dependency. Each file has exactly one owner, including manifests,
    lockfiles, generated files, test fixtures and delivery scripts. The design
    document belongs to Architect. Missing tiers get explicit no-work assignments.
+   Architect also decides whether the issue needs a **UI/UX Designer**, with an
+   explicit reason for selecting or skipping it.
 4. Web, API, Infrastructure, Agent, Test and DevOps run concurrently in separate
    contexts and isolated worktrees. Every active writer commits and pushes its
    own work to the **same remote feature branch**. No shared checkout/index.
+   - If selected, **UI/UX Designer runs first**, receiving Architect's plan,
+     requirement IDs, narrow task and exclusively owned design artifact paths.
+     The designer commits/pushes the design; the workflow verifies its inclusion
+     and nonempty artifacts before launching any implementation writer.
+     Web starts from that published revision and treats the UI/UX design as
+     **authoritative**, not optional inspiration. Conflicts with issue scope,
+     architecture contracts or existing policies block for Architect replanning,
+     never silent redesign. Designer failures enter the same scoped repair loop;
+     once selected, design stays enabled through repair rounds.
+   - If skipped, no designer agent or design phase runs. The six-writer fan-out
+     and concurrency limit are unchanged.
    - Test writes requirement-traceable local tests, local/deployed E2E and
      post-deployment smoke tests.
    - DevOps writes scan, lint, formatting-check, CI/deploy/rollback orchestration
@@ -42,7 +55,8 @@ not recommendations. Creating these files does not install or run the workflow.
 8. Architect replans outstanding work and repeats steps 2-7. When application
    repair issues are resolved, Architect creates/reuses a PR. The workflow
    targets the preceding feature branch (or the default branch for the bottom
-   PR), publishes its stack position and dependency order, then requests GitHub
+   PR), registers/extends its **native GitHub stack** once two PRs exist,
+   publishes its stack position and dependency order, then requests GitHub
    Copilot review and waits for a **submitted review of the
    exact tested SHA**. Architect reads and dispositions all comments; actionable
    findings return through the same design/build/test/deploy loop.
@@ -57,9 +71,12 @@ not recommendations. Creating these files does not install or run the workflow.
 
 ## Stacked PR review and approval order
 
-The workflow uses standard GitHub PR
-[base/head relationships](https://docs.github.com/en/pull-requests/how-tos/create-pull-requests/changing-the-base-branch-of-a-pull-request),
-not a private stacking API, a third-party service or an additional CLI extension:
+The workflow uses [GitHub stacked pull requests](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests),
+not just a branch chain with a Markdown table. It registers stacks through the
+documented [stacked pull requests REST API](https://docs.github.com/en/rest/pulls/stacks),
+using authenticated `gh api` and API version `2026-03-10`. No third-party service
+or additional CLI extension is required; this is the native stack feature also
+managed by `gh stack`.
 
 ```text
 main <- feature/issue-7 <- feature/issue-9 <- feature/issue-11
@@ -67,7 +84,16 @@ main <- feature/issue-7 <- feature/issue-9 <- feature/issue-11
 ```
 
 Each feature PR therefore shows its incremental changes relative to the feature
-below it. Every PR description contains a managed block with:
+below it. With only one PR, there is no native stack yet. When the second PR is
+opened, the workflow creates the native stack with PR numbers ordered bottom-up;
+later PRs are appended to that same stack. Before writing delivery metadata, it
+reads membership back and verifies the trunk, order, open state, branch names
+and tested SHAs. Replays reuse existing membership rather than creating duplicate
+stacks. Missing API support/access, conflicting membership or unexpected stack
+changes fail explicitly; there is no branch-chain-only fallback.
+
+GitHub provides native stack navigation and stack-aware rules/CI. Every PR
+description additionally contains a workflow-managed **delivery** block with:
 
 - The full bottom-up approval/merge order, PR/issue links, base branch and position.
 - Its immediate predecessor, and whether its automated delivery gates are
@@ -79,21 +105,50 @@ review, and marked ready only after that feature's gates pass. Existing human
 PR text outside the managed block is preserved. A pending PR is not an accepted
 stack tip and cannot admit the next feature.
 
-**Review and approve bottom-up; merge bottom-up as well.** This is visible
-guidance, not a GitHub-enforced dependency lock. The workflow never approves or
-merges PRs and never bypasses branch protection. It does not wait for human
+**Review and approve bottom-up; merge bottom-up as well.** The delivery table's
+human approval order is guidance, not an additional approval lock; GitHub's
+native stack rules and required checks still apply. The workflow never approves
+or merges PRs and never bypasses branch protection. It does not wait for human
 approval before taking the next issue. If a predecessor changes, is merged,
 closed or retargeted while work is running, the workflow stops rather than
-silently rebasing descendants or reusing stale evidence.
+initiating a restack or reusing stale evidence. Dissolved or changed native
+membership also stops intake.
 
-Human merge/release ownership includes restacking/retargeting as needed and
-rerunning affected checks/reviews after base changes. This example is not an
-automatic restacker or merge queue. Keep the queue curated: processing until
+Human merge/release ownership includes GitHub's native cascading rebases and
+rerunning affected checks/reviews after base or SHA changes. Automatic native
+rebasing does not validate this workflow's deployment/test evidence. This
+example never initiates a cascading rebase and is not a merge queue.
+Keep the queue curated: processing until
 empty can accumulate a large unmerged review backlog.
+
+### Architect-to-UI/UX-to-Web contract
+
+The structured Architect plan always includes `uiUx`:
+
+```json
+{
+  "enabled": true,
+  "reason": "The issue needs a new user interaction",
+  "task": "Design the issue's required screens and interaction states",
+  "files": ["docs/design/issue-123-ui-ux.md"],
+  "requirementIds": ["R1"]
+}
+```
+
+For a skipped step, use `enabled: false`, a nonempty `reason`, `task: ""`,
+`files: []` and `requirementIds: []`. There is no workflow input toggle:
+Architect decides from each issue. Enabled design requires active Web work,
+existing requirement IDs and exact artifact paths disjoint from Architect and
+all six implementation owners. UI/UX Designer owns only those artifacts, not
+Web implementation files, and can receive requirement-linked repair findings.
+Web and evaluation agents receive the authoritative artifact paths and revision.
+The design refines implementation of the quoted issue requirements; it cannot
+invent acceptance criteria or override repository policies.
 
 ## Install and run
 
-Requires Node.js 24+, Git, authenticated `gh`, and a Copilot CLI version providing
+Requires Node.js 24+, Git, authenticated `gh` with native stacked-PR REST API
+access on the target GitHub host, and a Copilot CLI version providing
 the experimental extension/workflow SDK. The API was checked against the
 [SDK workflow guide](https://github.com/github/copilot-sdk/blob/main/nodejs/docs/workflows.md)
 and CLI 1.0.105. The SDK import resolves inside Copilot; do not install an
@@ -203,10 +258,11 @@ empty, a feature blocks, or the runtime stops the run.
   `copilot workflow run` cannot display permission prompts; configure grants
   before running, or start interactively. Do not grant unrestricted tooling.
 - The trusted extension itself invokes checkout-preserving Git fetch/show/ancestry checks
-  and `gh` issue/label/review operations directly. These subprocesses are not
+  and `gh` issue/label/review and native stack REST operations directly. These subprocesses are not
   agent permission prompts. Review the extension before trusting/loading it.
   `gh` must already have the required repository access, including creating
-  issues/labels, pushing branches, opening PRs and requesting Copilot review.
+  issues/labels, pushing branches, opening PRs, reading/creating/extending native
+  stacks and requesting Copilot review.
 - Enable Copilot review on GitHub. Missing entitlement/access or a pending review
   is not a pass. Review request uses `gh pr edit --add-reviewer "@copilot"`; the
   submitted REST review must come from `copilot-pull-request-reviewer[bot]` and
@@ -233,11 +289,20 @@ empty, a feature blocks, or the runtime stops the run.
   not the blocked/pending PR itself. Continuation rejects old/non-tip stack
   members, cycles, inconsistent metadata, foreign PRs and moved/merged/retargeted
   parents; resolve these explicitly rather than starting a disconnected stack.
+  If a pending child is already registered in the native stack, recovery allows
+  only that single trailing child and only for its explicit `issueNumber`.
+  An older branch-chain-only stack with two or more PRs must be validated and
+  linked natively (for example with the documented `gh stack link`) before
+  continuation; a delivery table alone no longer qualifies.
   For interrupted/error runs, prefer the CLI's resume mechanism: per-issue
   journal keys, labels and worktree paths prevent one feature's results from
-  being reused for another. Remote checks and idempotent stack publication still
-  run before dequeueing. Start a new run rather than resuming an old single-issue
-  workflow definition after upgrading to this queue/stack version.
+  being reused for another. Completed issue deliveries are journaled as a unit,
+  so replay never republishes an earlier stack prefix over descendants. Remote
+  checks and idempotent stack publication still run before dequeueing, and final
+  queue completion revalidates the full native stack even on replay.
+  Returned blockers are retained; fix them in a new invocation, not by resuming
+  the blocked result. Start a new run rather than resuming an older workflow
+  definition after upgrading to this native-stack/UI/UX version (journal v3).
 - Worktrees live under the OS temporary directory's `copilot-issue-delivery`
   subdirectory, separated by run, issue, role and round. Agents remove only their own
   clean worktrees after successful pushes. Retain blocked work for recovery;
@@ -293,8 +358,12 @@ node --check install.mjs
 Workflow tests use fake agents and GitHub responses: they check orchestration, disjoint
 ownership, requirement/evidence guards, parallel failure, repair/review loops,
 deployment retries, stale-SHA gates and paginated review/issue handling. They
+verify optional designer selection/skipping, authoritative Web handoffs,
+artifact ownership/publication and designer repair/failure gates. They
 also cover multi-issue queue draining, ordered PR bodies, pending versus
-accepted stack tips, continuation, stale parents and publication failure replay.
+accepted stack tips, continuation, stale parents and publication failure replay,
+plus native stack create/append/readback, idempotency, membership drift and
+API failure handling.
 Installer tests create disposable local Git repositories, verify portability and exact
 payload, preserve modified installations, and reject unsafe/ambiguous targets.
 Tests do **not** create GitHub issues/branches/PRs, request a real review, or deploy.
