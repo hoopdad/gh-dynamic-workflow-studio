@@ -16,7 +16,7 @@ test("installs studio independently without modifying an existing workflow", asy
     assert.deepEqual(await readFile(workflow), before);
     assert.ok((await readdir(installed)).includes("npm-shrinkwrap.json"));
     assert.deepEqual((await readdir(path.join(installed, "src"))).sort(),
-        ["app.mjs", "directory-picker.mjs", "extension.mjs", "index.html", "observed.mjs", "server.mjs", "source.mjs", "store.mjs", "style.css", "usage.mjs"]);
+        ["app.mjs", "directory-picker.mjs", "extension.mjs", "index.html", "observed.mjs", "server.mjs", "store.mjs", "style.css", "usage.mjs"]);
     await assert.rejects(installStudio(f.project), /Already exists/);
 });
 

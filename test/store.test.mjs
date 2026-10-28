@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, rename, symlink } from "node:fs/promises";
 import path from "node:path";
 import { WorkflowStore, workspaceCwd } from "../src/store.mjs";
 import { fixture, SESSION, OUTSIDE_SESSION } from "./fixture.mjs";
@@ -12,7 +12,7 @@ test("reads YAML cwd forms without treating backslashes as escapes", () => {
     assert.equal(workspaceCwd("other: x"), null);
 });
 
-test("a fresh machine without session storage can still inspect source without creating storage", async (t) => {
+test("a fresh machine without session storage reports an empty observation without creating storage", async (t) => {
     const f = await fixture();
     t.after(f.cleanup);
     const sessionsRoot = path.join(f.base, "missing-sessions");
@@ -23,6 +23,28 @@ test("a fresh machine without session storage can still inspect source without c
     assert.match(listing.warnings[0], /No local Copilot session storage/);
     await assert.rejects(readdir(sessionsRoot), { code: "ENOENT" });
 });
+
+for (const name of ["workspace.yaml", "session.db", "events.jsonl"]) {
+    test(`rejects ${name} links that escape the session folder`, async (t) => {
+        const f = await fixture();
+        t.after(f.cleanup);
+        const target = path.join(path.dirname(f.dbFile), name);
+        const outside = path.join(f.base, name);
+        await rename(target, outside);
+        try { await symlink(outside, target, "file"); }
+        catch (error) { if (error.code === "EPERM") return t.skip("Symlink permission unavailable"); throw error; }
+        const store = new WorkflowStore(f.project, { sessionsRoot: f.sessionsRoot });
+        const listing = await store.listRuns();
+        if (name === "events.jsonl") {
+            const detail = await store.detail(SESSION, "live-run");
+            assert.ok(detail.usageWarnings.some((warning) => warning.includes("escapes")));
+            assert.equal(detail.agents[0].usage.inputTokens, null);
+        } else {
+            assert.deepEqual(listing.runs, []);
+            assert.ok(listing.warnings.some((warning) => warning.includes("escapes")));
+        }
+    });
+}
 
 test("lists only matching project sessions and leaves database bytes and files unchanged", async (t) => {
     const f = await fixture();

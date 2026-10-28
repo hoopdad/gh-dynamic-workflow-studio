@@ -10,7 +10,7 @@ const marker = ".dynamic-workflow-studio.json";
 const files = [
     "extension.mjs", "package.json", "npm-shrinkwrap.json", "README.md", "LICENSE",
     "bin/dynamic-workflow-studio.mjs", "scripts/install.mjs", "docs/studio.md",
-    ...["extension.mjs", "server.mjs", "directory-picker.mjs", "source.mjs", "store.mjs", "usage.mjs", "observed.mjs",
+    ...["extension.mjs", "server.mjs", "directory-picker.mjs", "store.mjs", "usage.mjs", "observed.mjs",
         "index.html", "app.mjs", "style.css"].map((file) => `src/${file}`),
 ];
 

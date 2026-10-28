@@ -3,14 +3,14 @@ import { joinSession, createCanvas } from "@github/copilot-sdk/extension";
 const instances = new Map();
 const inputSchema = {
     type: "object", required: ["projectRoot"],
-    properties: { projectRoot: { type: "string", description: "Explicit local project root whose workflow source and sessions may be observed read-only." } },
+    properties: { projectRoot: { type: "string", description: "Explicit local project root whose recorded workflow sessions may be observed read-only." } },
 };
 
 await joinSession({
     canvases: [createCanvas({
         id: "dynamic-workflow-studio",
         displayName: "Dynamic Workflow Studio",
-        description: "One pane for Dynamic Workflow source/design drafts, live phase and agent timelines, and historical results. Never starts, changes or stops a workflow.",
+        description: "Explore live and past Dynamic Workflow runs in one Activity view with retained outcomes. Never starts, changes or stops a workflow.",
         inputSchema,
         actions: [{
             name: "snapshot",
@@ -38,14 +38,7 @@ await joinSession({
                 throw new Error("Use a new instanceId to observe another project");
             }
             if (!instance) {
-                let startStudio;
-                try { ({ startStudio } = await import("./server.mjs")); }
-                catch (error) {
-                    if (error.code === "ERR_MODULE_NOT_FOUND" && ["acorn", "yaml"].some((name) => error.message.includes(name))) {
-                        throw new Error("Dynamic Workflow Studio dependencies are missing. Run npm ci --omit=dev in the installed extension directory, then reopen the canvas.", { cause: error });
-                    }
-                    throw error;
-                }
+                const { startStudio } = await import("./server.mjs");
                 instance = await startStudio(projectRoot);
                 instance.requestedRoot = projectRoot;
                 instances.set(ctx.instanceId, instance);

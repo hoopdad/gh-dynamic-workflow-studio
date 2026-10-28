@@ -1,7 +1,7 @@
 {
   "name": "dynamic-workflow-studio",
   "version": "0.1.0",
-  "description": "Local design drafts and read-only workflow observation for GitHub Copilot CLI.",
+  "description": "Read-only workflow observation and historical results for GitHub Copilot CLI.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -24,10 +24,6 @@
     "check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "test:ui": "playwright test"
-  },
-  "dependencies": {
-    "acorn": "^8.15.0",
-    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"

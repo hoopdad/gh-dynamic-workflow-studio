@@ -27,28 +27,26 @@
     <aside class="sidebar">
       <button id="toggle-workspace" class="sidebar-toggle" aria-label="Hide workspace" aria-expanded="true" aria-controls="workspace-panel" title="Hide workspace">&lt;&lt;</button>
       <div id="workspace-panel" class="sidebar-content">
-      <div class="sidebar-heading"><span class="eyebrow">WORKSPACE</span><button id="refresh" title="Refresh source and run discovery">Refresh</button></div>
+      <div class="sidebar-heading"><span class="eyebrow">WORKSPACE</span><button id="refresh" title="Refresh run discovery">Refresh</button></div>
       <label for="workflow">Workflow</label>
       <select id="workflow"></select>
       <p class="small muted" id="workflow-description"></p>
       <label for="run-search">Find a run</label>
       <input id="run-search" type="search" placeholder="Status, run or session ID">
       <div class="run-filter" aria-label="Filter runs">
-        <button data-filter="all" class="active">All</button><button data-filter="running">Live</button><button data-filter="finished">Past</button>
+        <button data-filter="all" class="active" aria-pressed="true">All</button><button data-filter="running" aria-pressed="false">Live</button><button data-filter="finished" aria-pressed="false">Past</button>
       </div>
       <div id="run-list" class="run-list" aria-label="Workflow runs"></div>
       <div class="sidebar-footer"><span id="connection" role="status">Connecting</span><span id="last-updated"></span><p class="small">Local data only. No workflow execution controls.</p></div>
       </div>
     </aside>
     <main>
-      <nav class="tabs" aria-label="Workflow lifecycle">
-        <button data-view="design"><span>01</span> Design &amp; build</button>
-        <button data-view="live" class="active"><span>02</span> Live execution</button>
-        <button data-view="history"><span>03</span> History &amp; results</button>
+      <div class="activity-toolbar">
+        <h2>Activity</h2>
         <button id="follow" class="follow active" aria-pressed="true">Follow latest live run</button>
-      </nav>
+      </div>
       <section class="view-heading">
-        <div><span class="eyebrow" id="view-kicker">OBSERVED EXECUTION</span><h1 id="view-title">Waiting for workflow data</h1><p id="view-subtitle" class="muted"></p></div>
+        <div><span class="eyebrow">RECORDED WORKFLOW ACTIVITY</span><h1 id="view-title">Waiting for workflow data</h1><p id="view-subtitle" class="muted"></p></div>
         <div class="view-actions"><span id="run-status" class="badge"></span><button id="export-run">Export snapshot</button></div>
       </section>
       <section class="metrics" id="metrics" aria-label="Run statistics"></section>
@@ -62,8 +60,8 @@
         <button data-activity-view="inspector" class="activity-card" aria-pressed="false" aria-controls="inspector-panel"><strong>Inspector</strong><span>Inspect the selected phase or run</span></button>
       </nav>
       <section id="graph-panel" class="panel graph-panel">
-        <div class="panel-heading"><div><h2 id="graph-title">Phase map</h2><span id="graph-caption" class="small muted"></span></div><div class="graph-tools"><div class="graph-zoom" role="group" aria-label="Flowchart zoom"><button id="zoom-out" aria-label="Zoom out flowchart" title="Zoom out flowchart">-</button><button id="zoom-reset" aria-label="Reset flowchart zoom" title="Reset zoom to 100%. Ctrl or Command + mouse wheel over the chart to zoom.">100%</button><button id="zoom-in" aria-label="Zoom in flowchart" title="Zoom in flowchart">+</button></div><label for="graph-layer" class="sr-only">Design graph layer</label><select id="graph-layer"><option value="phases">Declared phases</option><option value="contract">Process contract</option></select><button id="clear-phase" hidden>All phases</button></div></div>
-        <div id="graph" class="phase-map" aria-label="Workflow phase map"></div>
+        <div class="panel-heading"><div><h2 id="graph-title">Team activity flowchart</h2><span id="graph-caption" class="small muted"></span></div><div class="graph-tools"><div class="graph-zoom" role="group" aria-label="Flowchart zoom"><button id="zoom-out" aria-label="Zoom out flowchart" title="Zoom out flowchart">-</button><button id="zoom-reset" aria-label="Reset flowchart zoom" title="Reset zoom to 100%. Ctrl or Command + mouse wheel over the chart to zoom.">100%</button><button id="zoom-in" aria-label="Zoom in flowchart" title="Zoom in flowchart">+</button></div><button id="clear-phase" hidden>Clear selection</button></div></div>
+        <div id="graph" class="execution-map" aria-label="Observed workflow task flowchart"></div>
         <div id="observed-phases" class="observed-phases" aria-label="Filter by entered phase"></div>
         <p id="graph-legend" class="graph-legend small"><span class="legend-dot running"></span> In progress / awaiting input / unconfirmed <span class="legend-dot visited"></span> Agent completed / explicit success <span class="legend-dot error"></span> Error <span class="muted">Select a task for its details. Green agent completion is not delivery acceptance.</span></p>
       </section>
@@ -78,13 +76,6 @@
           <div id="runtime-panel">
             <div class="toolbar"><label for="agent-search" class="sr-only">Filter agents</label><input id="agent-search" type="search" placeholder="Filter agents by label, role or status"><label for="attempt" class="small">Attempt</label><select id="attempt"><option value="">All</option></select></div>
             <div id="agents" class="agent-list"></div>
-          </div>
-          <div id="design-panel" hidden>
-            <div class="toolbar"><label for="source-file" class="sr-only">Source file</label><select id="source-file"></select><button id="preview-source">Preview draft</button><button id="export-source">Export draft</button></div>
-            <p class="notice small">Drafts stay in this pane until exported. There is no save, apply, import, or execution endpoint. Preview parses syntax; it does not execute or fully validate workflow behavior.</p>
-            <label for="source-editor" class="editor-label">Workflow source draft <span id="draft-status" class="muted"></span></label>
-            <textarea id="source-editor" spellcheck="false" wrap="off" aria-describedby="draft-message"></textarea>
-            <p id="draft-message" class="small" role="status"></p>
           </div>
         </section>
         <section id="inspector-panel" class="panel inspector" hidden>

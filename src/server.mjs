@@ -1,8 +1,7 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath, lstat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { loadDesign, analyzeSource } from "./source.mjs";
 import { WorkflowStore } from "./store.mjs";
 import { pickDirectory } from "./directory-picker.mjs";
 
@@ -13,21 +12,15 @@ const assets = new Map([
     ["style.css", ["style.css", "text/css; charset=utf-8"]],
 ]);
 
-async function body(request) {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of request) {
-        size += chunk.length;
-        if (size > 2.1 * 1024 * 1024) throw new Error("Request exceeds source size limit");
-        chunks.push(chunk);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
 export async function startStudio(projectRoot, options = {}) {
-    let design = await loadDesign(projectRoot);
-    let store = new WorkflowStore(design.root, options);
-    await store.discover();
+    async function openStore(root) {
+        const resolved = await realpath(root);
+        if (!(await lstat(resolved)).isDirectory()) throw new Error("Project root must be a directory");
+        const nextStore = new WorkflowStore(resolved, options);
+        await nextStore.discover();
+        return nextStore;
+    }
+    let store = await openStore(projectRoot);
     let lastDiscovery = Date.now();
     const token = randomBytes(32).toString("hex");
     const nonce = randomBytes(24).toString("base64");
@@ -71,28 +64,24 @@ export async function startStudio(projectRoot, options = {}) {
                 response.writeHead(200, { "Content-Type": type });
                 return response.end(content.replaceAll("__NONCE__", nonce));
             }
-            if (request.method === "GET" && route === "api/design") return send(200, design);
+            if (request.method === "GET" && route === "api/project") return send(200, { projectRoot: store.projectRoot });
             if (request.method === "POST" && route === "api/project/pick") {
                 if (request.headers.origin !== origin) return send(403, { error: "Same-origin directory selection required" });
                 if (choosingDirectory) return send(409, { error: "A directory picker is already open" });
                 choosingDirectory = true;
                 try {
-                    const selected = await (options.pickDirectory ?? pickDirectory)(design.root, { signal: pickerAbort.signal });
-                    if (!selected) return send(200, { changed: false, projectRoot: design.root });
-                    const nextDesign = await loadDesign(selected);
-                    const nextStore = new WorkflowStore(nextDesign.root, options);
-                    await nextStore.discover();
-                    design = nextDesign;
-                    store = nextStore;
+                    const selected = await (options.pickDirectory ?? pickDirectory)(store.projectRoot, { signal: pickerAbort.signal });
+                    if (!selected) return send(200, { changed: false, projectRoot: store.projectRoot });
+                    store = await openStore(selected);
                     lastDiscovery = Date.now();
-                    return send(200, { changed: true, projectRoot: design.root });
+                    return send(200, { changed: true, projectRoot: store.projectRoot });
                 } finally { choosingDirectory = false; }
             }
-            if (request.method === "POST" && route === "api/design/refresh") {
-                const current = design;
-                const refreshed = await loadDesign(current.root);
-                if (design === current) design = refreshed;
-                return send(200, design);
+            if (request.method === "POST" && route === "api/refresh") {
+                const current = store;
+                await current.discover();
+                if (store === current) lastDiscovery = Date.now();
+                return send(200, { projectRoot: store.projectRoot });
             }
             if (request.method === "GET" && route === "api/snapshot") {
                 return send(200, await snapshot({
@@ -104,15 +93,6 @@ export async function startStudio(projectRoot, options = {}) {
                     beforeSeq: Number(url.searchParams.get("beforeSeq")), limit: 200,
                 });
                 return send(200, detail.progress);
-            }
-            if (request.method === "POST" && route === "api/analyze") {
-                if (!request.headers["content-type"]?.startsWith("application/json")) {
-                    return send(415, { error: "Expected application/json" });
-                }
-                const input = await body(request);
-                const file = design.files.find((candidate) => candidate.file === input.file);
-                if (!file) return send(400, { error: "File is not in the selected source graph" });
-                return send(200, { file: file.file, ...analyzeSource(input.source, file.file) });
             }
             return send(404, { error: "Not found" });
         } catch (error) {
@@ -129,7 +109,7 @@ export async function startStudio(projectRoot, options = {}) {
     });
     origin = `http://127.0.0.1:${server.address().port}`;
     return {
-        server, url: `${origin}/${token}/`, get projectRoot() { return design.root; }, snapshot,
+        server, url: `${origin}/${token}/`, get projectRoot() { return store.projectRoot; }, snapshot,
         close: () => new Promise((resolve, reject) => {
             pickerAbort.abort();
             server.close((error) => error ? reject(error) : resolve());

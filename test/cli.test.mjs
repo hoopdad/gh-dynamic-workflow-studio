@@ -51,8 +51,8 @@ for (const explicit of [true, false]) {
         const page = await request(url);
         assert.equal(page.status, 200);
         assert.match(await page.text(), /<title>Dynamic Workflow Studio<\/title>/);
-        const design = await (await request(new URL("api/design", url))).json();
-        assert.equal(path.resolve(design.root), path.resolve(project));
+        const selected = await (await request(new URL("api/project", url))).json();
+        assert.equal(path.resolve(selected.projectRoot), path.resolve(project));
         const snapshot = await (await request(new URL("api/snapshot", url))).json();
         assert.deepEqual(snapshot.runs, []);
         assert.match(snapshot.warnings[0], /No local Copilot session storage/);

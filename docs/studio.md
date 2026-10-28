@@ -1,8 +1,8 @@
 # Dynamic Workflow Studio: UI and observation guide
 
-A local **GitHub Copilot canvas** for three parts of the Dynamic Workflow
-lifecycle: design/build, live execution, and historical outcomes. One pane
-shares workflow selection, run history, phase inspection and source context.
+A local **GitHub Copilot canvas** for observing Dynamic Workflow activity and
+reviewing historical outcomes. One pane shares recorded workflow selection,
+run history and phase inspection. It does not inspect or edit workflow source.
 
 ## Open Studio
 
@@ -15,35 +15,40 @@ Renderer dependencies load on first open, not during normal CLI startup.
 Use a different canvas instance for each project. The canvas's agent-callable
 `snapshot` action reports the selected project's durable runs.
 Alternatively, the **...** button next to the header's project name and path
-opens the OS folder picker. A successful selection atomically changes source
-and session scope and reloads the whole page, clearing old selections and filters.
-Canceling or a picker/load failure leaves the current project intact. Export
-drafts first; switching with unexported drafts requires confirmation.
+opens the OS folder picker. A successful selection atomically changes session
+scope and reloads the whole page, clearing old selections and filters.
+Canceling or a picker/load failure leaves the current project intact.
 
 Prefer the global installation or standalone browser to observe an active
 project without changing it. A project-only installation writes only its own
 extension directory, but may still constitute source drift for an active
 legacy fingerprint-guarded workflow.
 
-## The three views
+## Activity
 
-| View | What it shows |
-| --- | --- |
-| Design & build | Installed JS metadata and static SDK call sites, or original YAML loop hierarchy with do-ers, reviewers and completion conditions; optional `docs\lab-flow.json` process contract. Source drafts preview without execution or saves. |
-| Live execution | Observed agent-task flowchart with square activities, start/stop ovals, timing arrows and parallel rows; entered-phase filters, task cards, wall-time bars, effective limits and paginated progress. Refreshes every two seconds while visible; discovers new matching sessions every ten seconds. |
-| History & results | Previous attempts/runs across matching project sessions, original phase records, retained result, error/failure and progress, and snapshot export. |
+One **Activity** workspace shows both live and past runs: observed agent-task
+flowcharts with square activities, start/stop ovals, timing arrows and parallel
+rows; entered-phase filters, task cards, wall-time bars, effective limits,
+paginated progress and snapshot export.
 
-Select a phase to filter agents and progress and inspect timing/source or
-contract inputs, processing, outputs, side effects and failure detectors.
-In design mode, literal phase titles can also be edited from the node inspector;
-this changes only the declaration in the source draft, not matching `phase()`
-calls or other references. Preview pending source edits before node edits.
+Use **All / Live / Past** to filter the run list. **Live** includes running runs
+with a valid lease; **Past** includes other recorded runs, including paused and
+stale runs. These are list filters, not separate visualizations or frozen views.
+The selected run refreshes every two seconds while the pane is visible; matching
+sessions are rediscovered every ten seconds or immediately with **Refresh**.
+**Outcome & evidence** appears automatically for a settled attempt (including
+paused), or when a result, error, failure or stop reason is retained. It stays
+hidden for a running or stale run with no recorded outcome; an expired lease
+does not manufacture a terminal result.
+
+Select an entered phase to filter agents and progress and inspect recorded timing.
+The workflow selector lists only workflows with recorded runs; a project with
+no runs displays an empty workspace even if it contains workflow source.
 Select a run to pin it; **Follow latest live run** returns to automatic selection.
-In live and history modes, the five activity cards select one view at a time:
+The five activity cards select one view at a time:
 **Team Activity Flowchart** (the default), **Progress Journal**, **Query Team
 Activity**, **Agent Activity**, or **Inspector**. The selection survives refreshes
-and lifecycle/run changes; filters and query text are retained when switching.
-Design mode keeps the phase outline, source workbench and inspector together.
+and run changes; filters and query text are retained when switching.
 Use **<<** to collapse the Workspace/run selector into a narrow rail and **>>**
 to restore it without changing the selected run, view or filters. Flowchart
 controls zoom text, cards and connectors together from **50% to 200%**; select
@@ -57,7 +62,7 @@ or extra acceptance reviewers.
 The `workflow-owner` profile retains stable doer labels; historical
 `workflow-doer` activity remains readable.
 
-Live/history charts show only agents with a recorded start, never future source
+Activity charts show only agents with a recorded start, never future source
 phases or an inferred plan. Repeated agent invocations are separate activities.
 Dashed arrows encode timestamp order, **not causal dependencies or proven
 spawning**: the store does not retain those relationships. Side-by-side tasks
@@ -147,12 +152,9 @@ in agent labels. Separate declared UI/backend phase entries can remain unentered
 even when those assignments executed; use the labeled activity, not a guessed
 phase acceptance state.
 
-Edits are **in-memory drafts**. Preview parses JavaScript or YAML without
-execution; it is not a semantic validator. Export downloads a `.draft.mjs`
-or `.draft.yml` file. There is deliberately no save/apply, workflow start/resume/pause/cancel,
-or source-write endpoint. Export a draft before closing/reloading the pane.
-Snapshot exports can contain local workflow results and should be reviewed
-before sharing.
+There are no source inspection, draft editing, save/apply or workflow
+start/resume/pause/cancel endpoints. Snapshot exports contain local workflow
+results and should be reviewed before sharing.
 
 ## Observation boundaries
 
@@ -190,19 +192,6 @@ adapter**, not a cross-session SDK attachment:
   A workflow envelope can be `completed` while its result says `blocked`;
   both are shown. Raw stored billing units are not guessed into credits/cost.
 
-Source inspection statically follows relative `.mjs`/`.js` imports from project
-extensions and known installed delivery modules, bounded to the real project
-root. It never imports or executes them. Static metadata resolution supports
-literal objects/arrays, top-level constant references and the common
-`["Phase"].map(title => ({ title }))` form, including inline `defineWorkflow`
-metadata. Unresolvable dynamic metadata is not
-invented. Declaration/contract order is an outline, not a control-flow DAG:
-branches, repeated phases and fan-out depend on actual execution.
-For this engine it also parses `gh-dynamic-workflows\loops.yml` as YAML data:
-the actual release/sprint nesting, original roles, inputs/outputs and completeWhen
-are inspectable and draft-editable. No module import is needed to obtain that
-hierarchy. The two engine registration names share that source.
-
 The renderer binds only to loopback, requires an unguessable per-instance URL,
 rejects cross-origin requests and unexpected Host headers, loads no remote
 assets, and renders untrusted workflow text with DOM text nodes. Closing the
@@ -221,10 +210,10 @@ npx playwright install chromium
 npm run test:ui
 ```
 
-Unit/integration tests cover source nonexecution, scope and symlink boundaries,
+Unit/integration tests cover observation without source access, scope and symlink boundaries,
 database/file invariance, schema rejection, stale leases, retained blocked
-results, pagination, and HTTP boundaries. Chromium tests cover all three views,
-source preview/export without writes, literal rendering of hostile labels,
+results, pagination, removed Design endpoints, and HTTP boundaries. Chromium tests cover unified Activity,
+snapshot export without writes, literal rendering of hostile labels,
 history pinning, live refresh, observed parallel flow and task selection, bounded
 evidence summaries/queries, in-pane drawer/focus handling, exact token attribution,
 append/deduplication/partial usage records, final-outcome projection and human task

@@ -2,7 +2,6 @@ import { DatabaseSync } from "node:sqlite";
 import { readdir, readFile, realpath, lstat } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { inside } from "./source.mjs";
 import { UsageReader, agentUsage, agentWork, unavailableUsage } from "./usage.mjs";
 
 const sessionIdPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -10,6 +9,16 @@ const runIdPattern = /^[a-zA-Z0-9_-]{1,128}$/;
 const json = (text) => text == null ? null : JSON.parse(text);
 const activeStatuses = new Set(["running", "queued", "pending"]);
 const terminalStatuses = new Set(["completed", "error", "halted", "cancelled"]);
+
+async function inside(root, relative) {
+    const boundary = await realpath(root);
+    const resolved = await realpath(path.resolve(boundary, relative));
+    const relation = path.relative(boundary, resolved);
+    if (relation === ".." || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) {
+        throw new Error(`Session path escapes selected root: ${relative}`);
+    }
+    return resolved;
+}
 
 export function workspaceCwd(text) {
     const raw = text.match(/^cwd:\s*(.+)$/m)?.[1]?.trim();
@@ -71,7 +80,7 @@ export class WorkflowStore {
         catch (error) {
             if (error.code !== "ENOENT") throw error;
             this.sessions = new Map();
-            this.discoveryWarnings = ["No local Copilot session storage found. Source inspection is still available."];
+            this.discoveryWarnings = ["No local Copilot session storage found. No recorded runs are available."];
             return this.discoveryWarnings;
         }
         const sessions = new Map();

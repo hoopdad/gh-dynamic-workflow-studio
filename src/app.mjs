@@ -2,8 +2,8 @@ import { observedFlow, outcome, stopReason, summarizeEvidence, queryTeam, proces
 
 const $ = (id) => document.getElementById(id);
 const state = {
-    design: null, snapshot: null, workflow: null, view: "live", filter: "all",
-    selection: null, phase: null, follow: true, drafts: new Map(), sourceFile: null,
+    snapshot: null, workflow: null, filter: "all",
+    selection: null, phase: null, follow: true,
     progress: [], progressKey: null, oldestSeq: null, hasOlder: false, polling: false, task: null, graphZoom: 100,
     activityView: "flowchart", choosingDirectory: false,
 };
@@ -52,12 +52,6 @@ function label(text) {
 function statusText(run) {
     return run.stale ? "STALE LEASE" : run.status.replaceAll("_", " ").toUpperCase();
 }
-function activeBlueprint() {
-    const original = state.design?.workflows.find((workflow) => workflow.name === state.workflow);
-    if (!original) return null;
-    const draft = state.drafts.get(original.file);
-    return draft?.analysis?.workflows.find((workflow) => workflow.binding === original.binding) ?? original;
-}
 function runsForWorkflow() {
     return state.snapshot?.runs.filter((run) => run.workflowName === state.workflow) ?? [];
 }
@@ -66,11 +60,6 @@ function detail() {
     return current?.workflowName === state.workflow ? current : null;
 }
 function selectedPhase() {
-    if (state.view === "design") {
-        return $("graph-layer").value === "contract"
-            ? state.design?.contract?.steps.find((step) => step.id === state.phase)
-            : activeBlueprint()?.phases.find((phase) => phase.id === state.phase);
-    }
     return detail()?.phases.find((phase) => phase.id === state.phase);
 }
 function download(name, content, type = "application/json") {
@@ -104,54 +93,37 @@ function renderRunList() {
             state.selection = { runId: run.runId, sessionId: run.sessionId };
             state.follow = false;
             state.phase = null;
-            if (state.view !== "design") state.view = run.status === "running" && !run.stale ? "live" : "history";
             await poll(true);
         }));
         container.append(button);
     }
-    if (!runs.length) empty(container, "No matching runs. Source design is still available.");
-    document.querySelectorAll("[data-filter]").forEach((button) => button.classList.toggle("active", button.dataset.filter === state.filter));
+    if (!runs.length) empty(container, "No matching recorded runs.");
+    document.querySelectorAll("[data-filter]").forEach((button) => {
+        const selected = button.dataset.filter === state.filter;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+    });
 }
 
 function renderHeading() {
     const current = detail();
-    const blueprint = activeBlueprint();
-    const design = state.view === "design";
-    $("view-kicker").textContent = design ? "STATIC DESIGN / UNSAVED DRAFT" : state.view === "live" ? "OBSERVED EXECUTION" : "DURABLE RUN HISTORY";
-    $("view-title").textContent = design ? blueprint?.name ?? state.workflow ?? "No static metadata found" : current?.workflowName ?? "No recorded run";
-    $("view-subtitle").textContent = design
-        ? "Inspect installed source, edit a draft, and preview its phase outline. The running workflow is never changed."
-        : current ? `Run ${current.runId} / session ${shortId(current.sessionId)} / attempt ${current.attempt}`
-            : "Choose a workflow or open Design & build to inspect its installed source.";
+    $("view-title").textContent = current?.workflowName ?? "No recorded run";
+    $("view-subtitle").textContent = current ? `Run ${current.runId} / session ${shortId(current.sessionId)} / attempt ${current.attempt}`
+        : "Choose a recorded workflow run. Runs appear here when local Copilot session records are available.";
     const outcomeSuffix = current?.result && typeof current.result.status === "string" ? ` / ${current.result.status.toUpperCase()}` : "";
-    $("run-status").textContent = design ? "DRAFT ONLY" : current ? `${statusText(current)}${outcomeSuffix}` : "NO RUN";
-    $("export-run").hidden = design;
+    $("run-status").textContent = current ? `${statusText(current)}${outcomeSuffix}` : "NO RUN";
     $("export-run").disabled = !current;
-    $("design-panel").hidden = !design;
-    $("runtime-panel").hidden = design;
-    $("graph-layer").hidden = !design;
-    $("graph-layer").querySelector('[value="contract"]').disabled = !state.design?.contract;
-    $("results-panel").hidden = state.view !== "history";
+    $("results-panel").hidden = !current || !(current.terminal || current.status === "paused" ||
+        current.result != null || current.error || current.failure || current.reason);
     renderActivityView();
-    $("stop-notice").hidden = design || !current;
-    $("graph-legend").hidden = design;
-    $("clear-phase").textContent = design ? "All phases" : "Clear selection";
+    $("stop-notice").hidden = !current;
     if (current) {
         $("stop-notice").replaceChildren(element("strong", `${outcome(current).label}: `),
             document.createTextNode(stopReason(current)));
     }
-    $("detail-title").textContent = design ? "Source workbench" : "Agent activity";
     $("follow").setAttribute("aria-pressed", String(state.follow));
     $("follow").classList.toggle("active", state.follow);
-    document.querySelectorAll("[data-view]").forEach((button) => {
-        button.classList.toggle("active", button.dataset.view === state.view);
-        button.setAttribute("aria-current", button.dataset.view === state.view ? "page" : "false");
-    });
-    const metrics = design ? [
-        ["Declared phases", blueprint?.phases.length ?? 0], ["Source modules", state.design?.files.length ?? 0],
-        ["Static operations", state.design?.files.reduce((total, file) => total + file.operations.length, 0) ?? 0],
-        ["Saved changes", "None"],
-    ] : [
+    const metrics = [
         ["Current phase", current?.phases.find((phase) => phase.id === current.currentPhaseId)?.title ?? "--"],
         ["Workflow active time", duration(current?.consumed.activeMs)],
         ["Agents live / spawned", current ? `${current.liveAgentCount} / ${current.consumed.subagents}` : "--"],
@@ -162,34 +134,27 @@ function renderHeading() {
         card.append(element("span", title), element("strong", String(value)));
         return card;
     }));
-    const warnings = [...(state.design?.warnings ?? []), ...(state.snapshot?.warnings ?? []), ...(current?.usageWarnings ?? [])];
-    if (current?.stale && !design) warnings.unshift("This run is still recorded as running, but its lease has expired. It is not confirmed live. No status was rewritten.");
-    if (current && state.view === "live" && current.status !== "running") warnings.unshift(`This attempt is ${current.status}, not live. Select History & results to inspect its outcome.`);
+    const warnings = [...(state.snapshot?.warnings ?? []), ...(current?.usageWarnings ?? [])];
+    if (current?.stale) warnings.unshift("This run is still recorded as running, but its lease has expired. It is not confirmed live. No status was rewritten.");
     $("warnings").textContent = warnings.join("\n");
     $("warnings").hidden = !warnings.length;
-    $("data-notice").textContent = design ? state.design?.graphNotice ?? "" :
+    $("data-notice").textContent =
         `${current?.notice ?? "No workflow data available."} Cross-session adapter: experimental local storage schema v1, not a supported cross-session SDK connection.`;
 }
 
 function renderActivityView() {
-    const design = state.view === "design";
-    $("activity-views").hidden = design;
     for (const button of document.querySelectorAll("[data-activity-view]")) {
         const selected = button.dataset.activityView === state.activityView;
         button.classList.toggle("active", selected);
         button.setAttribute("aria-pressed", String(selected));
-        const visible = design
-            ? ["flowchart", "agents", "inspector"].includes(button.dataset.activityView)
-            : selected;
-        $(button.getAttribute("aria-controls")).hidden = !visible;
+        $(button.getAttribute("aria-controls")).hidden = !selected;
     }
-    $("detail-grid").hidden = !design && !["agents", "inspector"].includes(state.activityView);
-    $("detail-grid").classList.toggle("single-view", !design);
+    $("detail-grid").hidden = !["agents", "inspector"].includes(state.activityView);
 }
 
 function setGraphZoom(value, pointer) {
     const graph = $("graph");
-    const surface = graph.querySelector(".flow-surface, .phase-map");
+    const surface = graph.querySelector(".flow-surface");
     const previous = state.graphZoom;
     state.graphZoom = Math.max(50, Math.min(200, value));
     $("zoom-reset").textContent = `${state.graphZoom}%`;
@@ -207,49 +172,6 @@ function setGraphZoom(value, pointer) {
 }
 
 function renderGraph() {
-    const design = state.view === "design";
-    $("graph").className = design ? "design-map" : "execution-map";
-    $("observed-phases").hidden = design;
-    if (!design) { renderObservedGraph(); return; }
-    $("graph").setAttribute("aria-label", "Declared workflow phase outline");
-    const contract = design && $("graph-layer").value === "contract";
-    const nodes = contract ? state.design?.contract?.steps ?? [] : design ? activeBlueprint()?.phases ?? [] : detail()?.phases ?? [];
-    $("graph-title").textContent = contract ? "Expected process contract" : design ? "Declared phase outline" : "Observed phase map";
-    $("graph-caption").textContent = contract ? "Contract order, not runtime proof or inferred control-flow edges"
-        : design ? activeBlueprint()?.binding?.startsWith("yaml:")
-            ? "Original YAML hierarchy. Select a loop to inspect its do-er, reviewers and completion condition."
-            : "Declaration order only. Branches, fan-out and loops are not statically inferred."
-            : "Retained run phases, not today's source. Visited does not mean accepted.";
-    const graph = $("graph");
-    graph.replaceChildren();
-    const surface = element("div", null, "phase-map");
-    surface.style.zoom = state.graphZoom / 100;
-    graph.append(surface);
-    for (const [index, node] of nodes.entries()) {
-        const status = node.status ?? "not_started";
-        const button = element("button", null, `phase-node ${status}${state.phase === node.id ? " selected" : ""}`);
-        if (design && node.depth) button.style.marginInlineStart = `${node.depth * 16}px`;
-        button.dataset.phase = node.id;
-        button.setAttribute("aria-pressed", String(state.phase === node.id));
-        const top = element("span", null, "node-top");
-        top.append(element("span", `${String(index + 1).padStart(2, "0")} /`),
-            element("span", design ? contract ? "CONTRACT" : "SOURCE" : status.replaceAll("_", " ").toUpperCase()));
-        const title = node.title ?? node.id;
-        button.append(top, element("strong", title));
-        const agents = detail()?.agents.filter((agent) => agent.phaseId === node.id).length ?? 0;
-        button.append(element("span", design ? contract ? `${node.inputs?.length ?? 0} inputs / ${node.outputs?.length ?? 0} outputs`
-            : `Line ${node.line}` : `${duration(node.activeMs)} / ${agents} agents / ${node.entries} entries`, "node-meta"));
-        button.addEventListener("click", () => {
-            state.phase = state.phase === node.id ? null : node.id;
-            renderGraph(); renderAgents(); renderInspector(); renderProgress();
-        });
-        surface.append(button);
-    }
-    if (!nodes.length) empty(surface, design ? "No statically resolvable phases. Use the source workbench; dynamic metadata is not guessed." : "No observed phases for this run.");
-    $("clear-phase").hidden = !state.phase;
-}
-
-function renderObservedGraph() {
     const current = detail();
     const graph = $("graph");
     const runKey = current ? JSON.stringify([current.sessionId, current.runId]) : "";
@@ -428,7 +350,7 @@ function renderInspector() {
     const technicalFocused = sameTask && document.activeElement === $("task-details").querySelector("details summary");
     const drawerScroll = sameTask ? $("task-details").scrollTop : 0;
     $("task-details").replaceChildren();
-    if (state.view !== "design" && current && state.task && renderTaskInspector($("task-details"), current)) {
+    if (current && state.task && renderTaskInspector($("task-details"), current)) {
         $("task-drawer").dataset.selection = state.task;
         const technical = $("task-details").querySelector("details");
         if (technical) technical.open = Boolean(technicalOpen);
@@ -436,78 +358,14 @@ function renderInspector() {
         $("task-details").scrollTop = drawerScroll;
         if (technicalFocused) technical?.querySelector("summary").focus({ preventScroll: true });
     } else if ($("task-drawer").open) $("task-drawer").close();
-    $("inspector-tag").textContent = phase ? "SELECTED NODE" : state.view === "design" ? "INSTALLED SOURCE" : "SELECTED RUN";
+    $("inspector-tag").textContent = phase ? "SELECTED NODE" : "SELECTED RUN";
     if (phase) {
         container.append(element("h3", phase.title ?? phase.id));
-        if (state.view === "design" && $("graph-layer").value === "contract") {
-            inspectFields(container, {
-                Processing: phase.processing, Inputs: phase.inputs, Outputs: phase.outputs,
-                "Failure modes": phase.failures, "Side effects": phase.sideEffects, Detector: phase.detector,
-                "Evidence class": state.design.contract.evidenceClass,
-            });
-        } else if (state.view === "design") {
-            inspectFields(container, {
-                Detail: phase.detail, "Do-er": phase.owner, Reviewers: phase.reviewers,
-                "Complete when": phase.completeWhen, "Parent loop": phase.parentId,
-                Inputs: phase.inputs, Outputs: phase.outputs, File: activeBlueprint()?.file, "Source line": phase.line,
-            });
-            const file = activeBlueprint().file;
-            const draft = state.drafts.get(file);
-            if (phase.sourceStart !== null && phase.sourceStart !== undefined && draft) {
-                const titleLabel = element("label", "Draft phase title", "editor-label");
-                titleLabel.htmlFor = "phase-title";
-                const titleInput = element("input");
-                titleInput.id = "phase-title";
-                titleInput.value = phase.title;
-                const rename = element("button", "Preview title change");
-                rename.disabled = draft.source !== draft.validatedSource;
-                rename.title = rename.disabled ? "Preview pending source edits first so source ranges are current" : "Changes only the declaration literal in your draft";
-                rename.addEventListener("click", () => action(async () => {
-                    if (draft.source !== draft.validatedSource) throw new Error("Preview pending source edits before editing a phase title");
-                    if (!titleInput.value.trim()) throw new Error("Phase title must not be empty");
-                    const source = draft.source.slice(0, phase.sourceStart) + JSON.stringify(titleInput.value) +
-                        draft.source.slice(phase.sourceEnd);
-                    draft.source = source;
-                    selectSource(file);
-                    await previewDraft(file);
-                }));
-                container.append(titleLabel, titleInput, rename,
-                    element("p", "Declaration only. Matching phase() calls and other references must be updated separately in the source draft.", "small muted"));
-            }
-            const jump = element("button", "Jump to source");
-            jump.addEventListener("click", () => {
-                selectSource(activeBlueprint().file);
-                const editor = $("source-editor");
-                const offset = editor.value.split("\n").slice(0, phase.line - 1).join("\n").length + (phase.line > 1 ? 1 : 0);
-                editor.focus();
-                editor.setSelectionRange(offset, editor.value.indexOf("\n", offset) < 0 ? editor.value.length : editor.value.indexOf("\n", offset));
-                editor.scrollTop = Math.max(0, (phase.line - 5) * 20);
-            });
-            container.append(jump);
-        } else {
-            inspectFields(container, {
-                Status: phase.status, "First entered": date(phase.startedAt), "Last exited": phase.completedAt ? date(phase.completedAt) : null,
-                "Observed active time": duration(phase.activeMs), Entries: phase.entries, "Last run attempt": phase.lastAttempt,
-                Detail: phase.detail,
-            });
-        }
-    } else if (state.view === "design") {
-        const blueprint = activeBlueprint();
         inspectFields(container, {
-            Description: blueprint?.description, File: blueprint?.file, "Declared limits": blueprint?.limits ?? "Not declared",
-            "Argument schema": blueprint?.argsSchema,
+            Status: phase.status, "First entered": date(phase.startedAt), "Last exited": phase.completedAt ? date(phase.completedAt) : null,
+            "Observed active time": duration(phase.activeMs), Entries: phase.entries, "Last run attempt": phase.lastAttempt,
+            Detail: phase.detail,
         });
-        if (blueprint) {
-            const section = element("div", null, "inspect-section");
-            section.append(element("h3", "Static SDK call sites"));
-            const file = state.drafts.get(blueprint.file)?.analysis ?? state.design.files.find((candidate) => candidate.file === blueprint.file);
-            for (const operation of file?.operations ?? []) {
-                const row = element("p", `L${operation.line} / ${operation.kind}${operation.label ? ` / ${operation.label}` : " / dynamic expression"}`, "small");
-                row.title = operation.expression;
-                section.append(row);
-            }
-            container.append(section);
-        }
     } else if (current) {
         inspectFields(container, {
             Status: statusText(current), Started: date(current.startedAt), Updated: date(current.updatedAt),
@@ -521,7 +379,6 @@ function renderInspector() {
 }
 
 function renderAgents() {
-    if (state.view === "design") { $("agent-count").textContent = "UNSAVED / EXPORT ONLY"; return; }
     const current = detail();
     const search = $("agent-search").value.toLowerCase();
     const agents = current?.agents.filter((agent) => (!state.phase || agent.phaseId === state.phase) &&
@@ -604,47 +461,13 @@ function renderProgress() {
     }, null, 2) : "No run selected.";
 }
 
-function selectSource(file) {
-    state.sourceFile = file;
-    $("source-file").value = file;
-    const original = state.design.files.find((candidate) => candidate.file === file);
-    if (!original) return;
-    if (!state.drafts.has(file)) state.drafts.set(file, { source: original.source, analysis: null, validatedSource: original.source });
-    $("source-editor").value = state.drafts.get(file).source;
-    $("draft-message").textContent = "Source draft loaded. Edits are in-memory only; export before closing or reloading this pane.";
-    updateDraftStatus();
-}
-function updateDraftStatus() {
-    const original = state.design?.files.find((candidate) => candidate.file === state.sourceFile);
-    const draft = state.drafts.get(state.sourceFile);
-    $("draft-status").textContent = draft?.source !== original?.source ? "/ modified, not saved" : "/ original, not modified";
-    $("export-source").disabled = !draft;
-}
-async function previewDraft(file) {
-    const draft = state.drafts.get(file);
-    if (!draft) throw new Error("Select a source module first");
-    const source = draft.source;
-    try {
-        const analysis = await api("analyze", { method: "POST", body: JSON.stringify({ file, source }) });
-        if (draft.source !== source) throw new Error("Draft changed during preview; preview the current edits again");
-        draft.analysis = analysis;
-        draft.validatedSource = source;
-        $("draft-message").textContent = `Syntax parsed without execution. ${analysis.workflows.length} workflow metadata object(s), ${analysis.operations.length} static SDK calls. Semantic behavior is not validated.`;
-        state.phase = null;
-        renderGraph(); renderInspector(); renderHeading();
-    } catch (cause) {
-        $("draft-message").textContent = `Preview failed: ${cause.message}. The phase outline retains the last successful preview.`;
-        throw cause;
-    }
-}
 function render() {
-    const description = state.design?.workflows.find((workflow) => workflow.name === state.workflow)?.description;
-    $("workflow-description").textContent = description ?? "Workflow observed in retained run records. Static metadata may be dynamic or unavailable.";
+    const description = state.snapshot?.runs.find((run) => run.workflowName === state.workflow)?.description;
+    $("workflow-description").textContent = description ?? "Workflows appear when local Copilot session records are available.";
     renderHeading(); renderRunList(); renderGraph(); renderAgents(); renderInspector(); renderProgress(); renderTeamAnswer();
 }
 function workflowOptions() {
-    const names = new Set([...(state.design?.workflows.map((workflow) => workflow.name) ?? []),
-        ...(state.snapshot?.runs.map((run) => run.workflowName) ?? [])]);
+    const names = new Set(state.snapshot?.runs.map((run) => run.workflowName) ?? []);
     $("workflow").replaceChildren(...[...names].map((name) => new Option(name, name)));
     if (!state.workflow || !names.has(state.workflow)) {
         state.workflow = state.snapshot?.detail?.workflowName ?? [...names][0] ?? null;
@@ -692,18 +515,12 @@ $("theme").addEventListener("click", () => {
 });
 renderTheme();
 $("choose-project").addEventListener("click", () => action(async () => {
-    const hasDrafts = [...state.drafts].some(([file, draft]) =>
-        draft.source !== state.design?.files.find((candidate) => candidate.file === file)?.source);
-    if (hasDrafts && !window.confirm("Changing directories discards unexported drafts. Continue?")) return;
     state.choosingDirectory = true;
     $("choose-project").disabled = true;
     $("choose-project").setAttribute("aria-busy", "true");
     try {
         const result = await api("project/pick", { method: "POST", timeout: 310_000 });
-        if (result.changed) {
-            state.drafts.clear();
-            window.location.reload();
-        }
+        if (result.changed) window.location.reload();
     } finally {
         state.choosingDirectory = false;
         $("choose-project").disabled = false;
@@ -741,16 +558,8 @@ $("workflow").addEventListener("change", () => action(async () => {
     state.selection = null;
     state.phase = null;
     state.follow = true;
-    const blueprint = activeBlueprint();
-    if (blueprint) selectSource(blueprint.file);
     render();
     await poll(true);
-}));
-document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
-    state.view = button.dataset.view;
-    state.phase = null;
-    state.task = null;
-    render();
 }));
 document.querySelectorAll("[data-activity-view]").forEach((button) => button.addEventListener("click", () => {
     state.activityView = button.dataset.activityView;
@@ -780,7 +589,6 @@ $("graph").addEventListener("wheel", (event) => {
     setGraphZoom(state.graphZoom + (event.deltaY < 0 ? 10 : -10), { x: event.clientX, y: event.clientY });
 }, { passive: false });
 $("attempt").addEventListener("change", renderProgress);
-$("graph-layer").addEventListener("change", () => { state.phase = null; renderGraph(); renderInspector(); });
 $("clear-phase").addEventListener("click", () => { state.phase = null; state.task = null; render(); });
 $("follow").addEventListener("click", () => action(async () => {
     state.follow = !state.follow;
@@ -789,24 +597,6 @@ $("follow").addEventListener("click", () => action(async () => {
     await poll(true);
     renderHeading();
 }));
-$("source-file").addEventListener("change", () => selectSource($("source-file").value));
-$("source-editor").addEventListener("input", () => {
-    const draft = state.drafts.get(state.sourceFile);
-    if (!draft) return;
-    draft.source = $("source-editor").value;
-    $("draft-message").textContent = "Unpreviewed edits. The phase outline still shows the last successful preview.";
-    updateDraftStatus();
-    renderInspector();
-});
-$("preview-source").addEventListener("click", () => action(() => previewDraft(state.sourceFile)));
-$("export-source").addEventListener("click", () => {
-    const draft = state.drafts.get(state.sourceFile);
-    if (draft) {
-        const yaml = /\.ya?ml$/i.test(state.sourceFile);
-        const name = state.sourceFile.split(/[\\/]/).at(-1).replace(/(\.m?js|\.ya?ml)$/i, ".draft$1");
-        download(name, draft.source, yaml ? "text/yaml" : "text/javascript");
-    }
-});
 $("export-run").addEventListener("click", () => {
     if (detail()) download(`workflow-${detail().runId}.json`, JSON.stringify({ ...detail(), exportedAt: new Date().toISOString() }, null, 2));
 });
@@ -827,30 +617,17 @@ $("older-progress").addEventListener("click", () => action(async () => {
 $("refresh").addEventListener("click", () => action(async () => {
     $("refresh").disabled = true;
     try {
-        state.design = await api("design/refresh", { method: "POST" });
-        workflowOptions();
-        // Keep all unsaved buffers, even when source on disk has changed.
-        $("source-file").replaceChildren(...state.design.files.map((file) => new Option(file.file, file.file)));
-        if (state.sourceFile && state.design.files.some((file) => file.file === state.sourceFile)) selectSource(state.sourceFile);
+        await api("refresh", { method: "POST" });
         await poll(true);
     } finally { $("refresh").disabled = false; }
 }));
-window.addEventListener("beforeunload", (event) => {
-    if ([...state.drafts].some(([file, draft]) => draft.source !== state.design.files.find((candidate) => candidate.file === file)?.source)) {
-        event.preventDefault();
-        event.returnValue = "";
-    }
-});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) void poll(); });
 
 await action(async () => {
-    state.design = await api("design");
-    $("project-name").textContent = state.design.root.split(/[\\/]/).at(-1);
-    $("project-path").textContent = state.design.root;
-    $("project-path").title = state.design.root;
+    const { projectRoot } = await api("project");
+    $("project-name").textContent = projectRoot.split(/[\\/]/).at(-1);
+    $("project-path").textContent = projectRoot;
+    $("project-path").title = projectRoot;
     await poll(true);
-    $("source-file").replaceChildren(...state.design.files.map((file) => new Option(file.file, file.file)));
-    const file = activeBlueprint()?.file ?? state.design.files[0]?.file;
-    if (file) selectSource(file);
 });
 setInterval(() => void poll(), 2000);

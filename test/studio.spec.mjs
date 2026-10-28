@@ -2,11 +2,10 @@ import { test, expect } from "@playwright/test";
 import { readFile, writeFile, appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { startStudio } from "../src/server.mjs";
-import { fixture, SOURCE, usageEvent, workEvent, workCard } from "./fixture.mjs";
+import { fixture, usageEvent, workEvent, workCard } from "./fixture.mjs";
 
 let f;
 let studio;
-let yamlSource;
 test("project ellipsis cancels without changes and reloads all project state after directory selection", async ({ page }) => {
     const local = await fixture();
     let instance;
@@ -23,7 +22,6 @@ test("project ellipsis cancels without changes and reloads all project state aft
         await expect(page.locator("#connection")).toContainText("Connected");
         const choose = page.getByRole("button", { name: "Choose project directory", exact: true });
         await expect(choose).toHaveText("...");
-        await page.locator('[data-view="history"]').click();
         await page.getByRole("button", { name: "example completed past-run" }).click();
         await page.locator("#run-search").fill("past-run");
         await choose.click();
@@ -38,14 +36,15 @@ test("project ellipsis cancels without changes and reloads all project state aft
         await expect(page.locator("#connection")).toContainText("Connected");
         await expect(page.locator("#project-name")).toHaveText("other");
         await expect(page.locator("#project-path")).toHaveText(local.otherProject);
-        await expect(page.locator("#workflow")).toHaveValue("new-project-workflow");
+        await expect(page.locator("#workflow option")).toHaveCount(0);
         await expect(page.locator("#run-search")).toHaveValue("");
         await expect(page.locator("#run-list .run-card")).toHaveCount(0);
         await expect(page.locator("#view-title")).toHaveText("No recorded run");
         await expect(page.locator("#graph .flow-node")).toHaveCount(0);
-        await page.locator('[data-view="design"]').click();
-        await expect(page.locator("#graph")).toContainText("New project phase");
-        await expect(page.locator("#source-editor")).not.toHaveValue(SOURCE);
+        await expect(page.locator("#workflow")).not.toContainText("new-project-workflow");
+        await expect(page.locator("#graph")).toContainText("No recorded run selected.");
+        await expect(page.locator("[data-view], #source-editor")).toHaveCount(0);
+        await expect(page.locator("#results-panel")).toBeHidden();
         expect(instance.projectRoot).toBe(local.otherProject);
         await expect(page.locator("#error")).toBeHidden();
     } finally {
@@ -55,7 +54,7 @@ test("project ellipsis cancels without changes and reloads all project state aft
     }
 });
 
-test("project switching confirms draft loss before opening a picker and preserves the page on picker failure", async ({ page }) => {
+test("project switching preserves the observation on picker failure without draft prompts", async ({ page }) => {
     const local = await fixture();
     let instance;
     let calls = 0;
@@ -66,17 +65,14 @@ test("project switching confirms draft loss before opening a picker and preserve
         });
         await page.goto(instance.url);
         await expect(page.locator("#connection")).toContainText("Connected");
-        await page.locator('[data-view="design"]').click();
-        await page.locator("#source-editor").fill(SOURCE + "\n// unsaved draft\n");
-        page.once("dialog", (dialog) => dialog.dismiss());
-        await page.locator("#choose-project").click();
-        expect(calls).toBe(0);
-        page.once("dialog", (dialog) => dialog.accept());
+        const dialogs = [];
+        page.on("dialog", (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
         await page.locator("#choose-project").click();
         await expect(page.locator("#error")).toContainText("Desktop picker unavailable");
         await expect(page.locator("#choose-project")).toBeEnabled();
         await expect(page.locator("#project-path")).toHaveText(local.project);
-        await expect(page.locator("#source-editor")).toHaveValue(SOURCE + "\n// unsaved draft\n");
+        await expect(page.locator("#view-subtitle")).toContainText("live-run");
+        expect(dialogs).toEqual([]);
         expect(calls).toBe(1);
     } finally {
         await page.close();
@@ -182,8 +178,6 @@ test("shows a work-conserving waiting checkpoint without claiming delivery or a 
 
 test.beforeAll(async () => {
     f = await fixture();
-    yamlSource = await readFile(new URL("./fixtures/loops.yml", import.meta.url), "utf8");
-    await writeFile(path.join(f.project, "gh-dynamic-workflows", "loops.yml"), yamlSource);
     studio = await startStudio(f.project, { sessionsRoot: f.sessionsRoot });
 });
 test.afterAll(async () => {
@@ -215,15 +209,11 @@ test("activity cards select one view, default to flowchart and retain state acro
     await page.locator("#team-query button").click();
     await page.waitForTimeout(2200);
     await expect(page.locator("#team-panel")).toBeVisible();
-    await page.locator('[data-view="history"]').click();
+    await page.locator('[data-filter="finished"]').click();
     await page.getByRole("button", { name: "example completed past-run" }).click();
     await expect(page.locator("#team-panel")).toBeVisible();
-    await page.locator('[data-view="design"]').click();
-    await expect(page.locator("#activity-views")).toBeHidden();
-    for (const panel of ["graph-panel", "agents-panel", "inspector-panel"]) {
-        await expect(page.locator(`#${panel}`)).toBeVisible();
-    }
-    await page.locator('[data-view="live"]').click();
+    await page.locator('[data-filter="running"]').click();
+    await page.locator("#follow").click();
     await expect(page.locator("#team-panel")).toBeVisible();
     await expect(page.locator("#team-question")).toHaveValue("Who is working?");
     await page.setViewportSize({ width: 390, height: 800 });
@@ -251,7 +241,7 @@ test("collapses the workspace without losing selection, filters or keyboard acce
     await page.waitForTimeout(2200);
     await expect(page.locator("#workspace-panel")).toBeHidden();
     await expect(page.locator("#view-subtitle")).toContainText("past-run");
-    await page.locator('[data-view="design"]').click();
+    await page.locator('[data-activity-view="agents"]').click();
     await expect(page.locator("#workspace-panel")).toBeHidden();
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -333,18 +323,18 @@ test("zooms flowchart text, cards and connectors without hijacking ordinary scro
     await expect(page.locator("#task-drawer")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(task).toBeFocused();
-    await page.locator('[data-view="design"]').click();
-    await expect(page.locator("#graph .phase-map")).toHaveCSS("zoom", "1.1");
+    await page.getByRole("button", { name: "example completed past-run" }).click();
+    await expect(page.locator("#graph .flow-surface")).toHaveCSS("zoom", "1.1");
     for (let i = 0; i < 20; i++) await wheel({ ctrlKey: true }, -100);
     await expect(page.locator("#zoom-reset")).toHaveText("200%");
     await expect(page.locator("#zoom-in")).toBeDisabled();
     await page.locator("#zoom-reset").click();
-    await expect(page.locator("#graph .phase-map")).toHaveCSS("zoom", "1");
+    await expect(page.locator("#graph .flow-surface")).toHaveCSS("zoom", "1");
     for (let i = 0; i < 20; i++) await wheel({ ctrlKey: true }, 100);
     await expect(page.locator("#zoom-reset")).toHaveText("50%");
     await expect(page.locator("#zoom-out")).toBeDisabled();
     await page.locator("#zoom-reset").click();
-    await page.locator('[data-view="live"]').click();
+    await page.locator("#follow").click();
     await expect(page.locator("#graph .flow-surface")).toHaveCSS("zoom", "1");
     await page.setViewportSize({ width: 390, height: 800 });
     await page.locator("#toggle-workspace").click();
@@ -446,7 +436,7 @@ test("shows unfinished task context, opens unstarted pending tasks, and refreshe
     }
 });
 
-test("unifies live phase/agent activity, historical outcomes and export-only design drafts", async ({ page }) => {
+test("unifies Activity with Live/Past filters, retained outcomes, refresh and snapshot export", async ({ page }) => {
     const pageErrors = [];
     const externalRequests = [];
     page.on("pageerror", (cause) => pageErrors.push(cause.message));
@@ -455,6 +445,9 @@ test("unifies live phase/agent activity, historical outcomes and export-only des
     });
     await page.goto(studio.url);
     await expect(page.locator("#connection")).toContainText("Connected");
+    await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+    await expect(page.locator("[data-view], #design-panel, #source-editor, #graph-layer")).toHaveCount(0);
+    await expect(page.locator("#results-panel")).toBeHidden();
     await expect(page.locator("#workflow")).toHaveValue("example");
     await expect(page.locator("#graph .flow-node.task")).toHaveCount(1);
     await expect(page.locator("#graph .flow-node.end")).toHaveCount(0);
@@ -485,61 +478,91 @@ test("unifies live phase/agent activity, historical outcomes and export-only des
     await page.locator('[data-activity-view="flowchart"]').click();
     await page.locator("#clear-phase").click();
 
-    await page.locator('[data-view="history"]').click();
+    await page.locator('[data-filter="running"]').click();
+    await expect(page.locator("#run-list .run-card")).toHaveCount(1);
+    await expect(page.locator("#run-list")).toContainText("live-run");
+    await expect(page.locator('[data-filter="running"]')).toHaveAttribute("aria-pressed", "true");
+    await page.locator('[data-filter="finished"]').click();
+    await expect(page.locator("#run-list .run-card")).toHaveCount(2);
+    await expect(page.locator("#run-list")).not.toContainText("live-run");
+    await expect(page.locator('[data-filter="running"]')).toHaveAttribute("aria-pressed", "false");
     await page.getByRole("button", { name: "example completed past-run" }).click();
+    await expect(page.locator("#results-panel")).toBeVisible();
     await expect(page.locator("#results")).toContainText("Missing approval");
     await expect(page.locator("#run-status")).toContainText("COMPLETED / BLOCKED");
     await expect(page.locator("#stop-notice")).toContainText("Missing approval");
     await expect(page.locator("#graph .flow-node.end.waiting")).toContainText("blocked");
     await expect(page.locator("#agents")).toContainText("unsettled");
+    const downloadEvent = page.waitForEvent("download");
+    await page.locator("#export-run").click();
+    const download = await downloadEvent;
+    expect(download.suggestedFilename()).toBe("workflow-past-run.json");
+    const exported = JSON.parse(await readFile(await download.path(), "utf8"));
+    expect(exported.runId).toBe("past-run");
+    expect(exported.result.status).toBe("blocked");
     await page.waitForTimeout(2200);
     await expect(page.locator("#view-subtitle")).toContainText("past-run");
     await page.getByRole("button", { name: "example running stale-run" }).click();
     await expect(page.locator("#warnings")).toContainText("lease has expired");
     await expect(page.locator("#observed-phases .stale")).toContainText("Build");
     await expect(page.locator("#graph .flow-node.task.waiting")).toHaveCount(1);
+    await expect(page.locator("#results-panel")).toBeHidden();
 
-    await page.locator('[data-view="design"]').click();
-    await expect(page.locator("#graph .phase-node")).toHaveCount(3);
-    await page.locator('[data-phase="design-1"]').click();
-    await page.locator("#phase-title").fill("Visual draft");
-    await page.getByRole("button", { name: "Preview title change" }).click();
-    await expect(page.locator("#graph")).toContainText("Visual draft");
-    await expect(page.locator("#source-editor")).toHaveValue(SOURCE.replace('"Build"', '"Visual draft"'));
-    await page.locator("#source-editor").fill(SOURCE.replace('"Build"', '"Build draft"'));
-    await page.locator("#preview-source").click();
-    await expect(page.locator("#draft-message")).toContainText("Syntax parsed without execution");
-    await expect(page.locator("#graph")).toContainText("Build draft");
-    expect(await readFile(path.join(f.project, "gh-dynamic-workflows", "workflow.mjs"), "utf8")).toBe(SOURCE);
-    const downloadEvent = page.waitForEvent("download");
-    await page.locator("#export-source").click();
-    const download = await downloadEvent;
-    expect(download.suggestedFilename()).toBe("workflow.draft.mjs");
-    expect(await readFile(await download.path(), "utf8")).toContain("Build draft");
-    await page.locator("#source-editor").fill("export const = broken");
-    await page.locator("#preview-source").click();
-    await expect(page.locator("#error")).toContainText("Unexpected token");
-    await expect(page.locator("#draft-message")).toContainText("Preview failed");
-    await expect(page.locator("#graph")).toContainText("Build draft");
-    await page.locator("#source-editor").fill(SOURCE);
-    await page.locator("#preview-source").click();
-    await expect(page.locator("#error")).toBeHidden();
-    await page.locator("#graph-layer").selectOption("contract");
-    await expect(page.locator("#graph")).toContainText("intake");
-    await page.locator("#graph .phase-node").click();
-    await expect(page.locator("#inspector")).toContainText("expected-source-contract-not-live-proof");
     await page.locator("#theme").click();
     const theme = await page.locator("html").getAttribute("data-theme");
     expect(["light", "dark"]).toContain(theme);
 
-    await page.locator('[data-view="live"]').click();
+    await page.locator('[data-filter="running"]').click();
     await page.locator("#follow").click();
     await expect(page.locator("#view-subtitle")).toContainText("live-run");
+    await expect(page.locator("#results-panel")).toBeHidden();
+    await page.locator("#refresh").click();
+    await expect(page.locator("#refresh")).toBeEnabled();
+    await expect(page.locator("#workflow-description")).toHaveText("Fixture workflow");
     f.mutate((db) => db.exec("UPDATE workflow_runs SET revision = 20 WHERE run_id = 'live-run'"));
     await expect(page.locator("#inspector")).toContainText("20", { timeout: 6000 });
     expect(pageErrors).toEqual([]);
     expect(externalRequests).toEqual([]);
     await expect(page.locator("#error")).toBeHidden();
+});
+
+test("shows newly retained outcomes without switching views and never invents an outcome for a stale run", async ({ page }) => {
+    const local = await fixture();
+    let instance;
+    try {
+        instance = await startStudio(local.project, { sessionsRoot: local.sessionsRoot });
+        await page.goto(instance.url);
+        await expect(page.locator("#connection")).toContainText("Connected");
+        await expect(page.locator("#results-panel")).toBeHidden();
+        local.mutate((db) => db.exec("UPDATE workflow_runs SET status='completed',result_json='false' WHERE run_id='live-run'"));
+        await expect(page.locator("#results-panel")).toBeVisible({ timeout: 6000 });
+        await expect(page.locator("#results")).toContainText('"result": false');
+        await expect(page.locator("#view-subtitle")).toContainText("live-run");
+        await expect(page.locator("[data-view]")).toHaveCount(0);
+        for (const [status, error, failure] of [
+            ["completed", null, null],
+            ["paused", null, null],
+            ["error", "Validation failed", '{"type":"workflow_limit_reached"}'],
+        ]) {
+            local.mutate((db) => db.prepare("UPDATE workflow_runs SET status=?,result_json=NULL,error=?,failure_json=? WHERE run_id='live-run'")
+                .run(status, error, failure));
+            await page.locator("#refresh").click();
+            await expect(page.locator("#results")).toContainText(`"status": "${status}"`);
+            await expect(page.locator("#results-panel")).toBeVisible();
+            if (error) await expect(page.locator("#results")).toContainText(error);
+            if (failure) await expect(page.locator("#results")).toContainText("workflow_limit_reached");
+        }
+        local.mutate((db) => db.exec(`UPDATE workflow_runs SET status='running',error=NULL,failure_json=NULL,
+            lease_expires_at_ms=1 WHERE run_id='live-run'`));
+        await page.locator("#refresh").click();
+        await expect(page.locator("#warnings")).toContainText("lease has expired");
+        await expect(page.locator("#results-panel")).toBeHidden();
+        await expect(page.locator("#error")).toBeHidden();
+    } finally {
+        await page.close();
+        await instance?.close();
+        await local.cleanup();
+    }
 });
 
 test("remains usable in a narrow canvas and surfaces refresh failures", async ({ page }) => {
@@ -553,31 +576,6 @@ test("remains usable in a narrow canvas and surfaces refresh failures", async ({
     await expect(page.locator("#error")).toContainText("fixture unavailable", { timeout: 6000 });
     await expect(page.locator("#connection")).toContainText("Disconnected");
     await expect(page.locator("#graph .flow-node.task")).toHaveCount(1);
-});
-
-test("shows original nested YAML do-ers/reviewers and previews/exports without changing installed source", async ({ page }) => {
-    await page.goto(studio.url);
-    await expect(page.locator("#connection")).toContainText("Connected");
-    await page.locator("#workflow").selectOption("lab-delivery");
-    await page.locator('[data-view="design"]').click();
-    await expect(page.locator("#graph .phase-node")).toHaveCount(14);
-    await page.locator('[data-phase="DevOpsWorkLoop"]').click();
-    await expect(page.locator("#inspector")).toContainText("DevOps Engineer");
-    await expect(page.locator("#inspector")).toContainText("Cloud-deployed system passes emitted tests/probes");
-    await page.locator('[data-phase="AssignedWorkUIDeveloperLoop"]').click();
-    await expect(page.locator("#inspector")).toContainText("Developer");
-    await expect(page.locator("#inspector")).toContainText("Designer");
-    await expect(page.locator("#inspector")).toContainText("SprintLoop");
-    await page.locator("#phase-title").fill("UI do-er draft");
-    await page.getByRole("button", { name: "Preview title change" }).click();
-    await expect(page.locator("#graph")).toContainText("UI do-er draft");
-    const event = page.waitForEvent("download");
-    await page.locator("#export-source").click();
-    const download = await event;
-    expect(download.suggestedFilename()).toBe("loops.draft.yml");
-    expect(await readFile(await download.path(), "utf8")).toContain("UI do-er draft");
-    expect(await readFile(path.join(f.project, "gh-dynamic-workflows", "loops.yml"), "utf8")).toBe(yamlSource);
-    await expect(page.locator("#error")).toBeHidden();
 });
 
 test("opens compact outcome details without page scrolling and refreshes exact model/token evidence", async ({ page }) => {
