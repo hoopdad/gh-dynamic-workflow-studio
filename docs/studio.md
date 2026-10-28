@@ -36,18 +36,17 @@ with a valid lease; **Past** includes other recorded runs, including paused and
 stale runs. These are list filters, not separate visualizations or frozen views.
 The selected run refreshes every two seconds while the pane is visible; matching
 sessions are rediscovered every ten seconds or immediately with **Refresh**.
-**Outcome & evidence** appears automatically for a settled attempt (including
-paused), or when a result, error, failure or stop reason is retained. It stays
-hidden for a running or stale run with no recorded outcome; an expired lease
-does not manufacture a terminal result.
+Select **Outcome & evidence** in the activity picker to inspect retained status,
+result, error, failure and stop reason. When no terminal outcome is recorded,
+the view says so; an expired lease does not manufacture a terminal result.
 
 Select an entered phase to filter agents and progress and inspect recorded timing.
 The workflow selector lists only workflows with recorded runs; a project with
 no runs displays an empty workspace even if it contains workflow source.
 Select a run to pin it; **Follow latest live run** returns to automatic selection.
-The five activity cards select one view at a time:
+The six activity cards select one view at a time:
 **Team Activity Flowchart** (the default), **Progress Journal**, **Query Team
-Activity**, **Agent Activity**, or **Inspector**. The selection survives refreshes
+Activity**, **Agent Activity**, **Inspector**, or **Outcome & evidence**. The selection survives refreshes
 and run changes; filters and query text are retained when switching.
 Use **<<** to collapse the Workspace/run selector into a narrow rail and **>>**
 to restore it without changing the selected run, view or filters. Flowchart
@@ -155,6 +154,14 @@ phase acceptance state.
 There are no source inspection, draft editing, save/apply or workflow
 start/resume/pause/cancel endpoints. Snapshot exports contain local workflow
 results and should be reviewed before sharing.
+
+**Export snapshot** downloads `workflow-<run-id>.json` with the selected run's
+currently retrieved details: run identifiers/status/timing, phases, agents and
+their projected model/token/outcome fields, limits, retained result/error/failure,
+the latest retrieved progress page and an export timestamp. Older progress pages
+loaded separately in the journal are not included. It is not a full-history
+backup, workflow source export or resumable checkpoint, and does not change
+execution.
 
 ## Observation boundaries
 

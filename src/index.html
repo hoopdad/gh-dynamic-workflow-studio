@@ -30,7 +30,6 @@
       <div class="sidebar-heading"><span class="eyebrow">WORKSPACE</span><button id="refresh" title="Refresh run discovery">Refresh</button></div>
       <label for="workflow">Workflow</label>
       <select id="workflow"></select>
-      <p class="small muted" id="workflow-description"></p>
       <label for="run-search">Find a run</label>
       <input id="run-search" type="search" placeholder="Status, run or session ID">
       <div class="run-filter" aria-label="Filter runs">
@@ -47,7 +46,7 @@
       </div>
       <section class="view-heading">
         <div><span class="eyebrow">RECORDED WORKFLOW ACTIVITY</span><h1 id="view-title">Waiting for workflow data</h1><p id="view-subtitle" class="muted"></p></div>
-        <div class="view-actions"><span id="run-status" class="badge"></span><button id="export-run">Export snapshot</button></div>
+        <div class="view-actions"><span id="run-status" class="badge"></span><button id="export-run" title="Download the selected run's current details as JSON; not a resumable checkpoint">Export snapshot</button></div>
       </section>
       <section class="metrics" id="metrics" aria-label="Run statistics"></section>
       <div id="warnings" class="notice" hidden></div>
@@ -58,6 +57,7 @@
         <button data-activity-view="query" class="activity-card" aria-pressed="false" aria-controls="team-panel"><strong>Query Team Activity</strong><span>Look up recorded team evidence</span></button>
         <button data-activity-view="agents" class="activity-card" aria-pressed="false" aria-controls="agents-panel"><strong>Agent Activity</strong><span>Browse agents and their status</span></button>
         <button data-activity-view="inspector" class="activity-card" aria-pressed="false" aria-controls="inspector-panel"><strong>Inspector</strong><span>Inspect the selected phase or run</span></button>
+        <button data-activity-view="outcomes" class="activity-card" aria-pressed="false" aria-controls="results-panel"><strong>Outcome &amp; evidence</strong><span>Inspect retained results and failures</span></button>
       </nav>
       <section id="graph-panel" class="panel graph-panel">
         <div class="panel-heading"><div><h2 id="graph-title">Team activity flowchart</h2><span id="graph-caption" class="small muted"></span></div><div class="graph-tools"><div class="graph-zoom" role="group" aria-label="Flowchart zoom"><button id="zoom-out" aria-label="Zoom out flowchart" title="Zoom out flowchart">-</button><button id="zoom-reset" aria-label="Reset flowchart zoom" title="Reset zoom to 100%. Ctrl or Command + mouse wheel over the chart to zoom.">100%</button><button id="zoom-in" aria-label="Zoom in flowchart" title="Zoom in flowchart">+</button></div><button id="clear-phase" hidden>Clear selection</button></div></div>

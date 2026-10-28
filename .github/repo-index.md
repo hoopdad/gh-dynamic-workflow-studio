@@ -13,7 +13,8 @@
   Never controls the workflow runtime or reads workflow source.
 - `src/app.mjs`, `observed.mjs`, `index.html`, `style.css`: browser UI,
   unified Activity view, All/Live/Past run-list filters, graph/drawer and
-  snapshot exports. Retained outcomes appear independently of list filters.
+  snapshot exports. Outcome & evidence is the sixth exclusive activity card;
+  its selection persists across refreshes and run changes.
 - `bin/dynamic-workflow-studio.mjs`: terminal server and installation commands.
 - `scripts/install.mjs`: standalone distribution manifest, scoped replacement,
   production dependencies and project/global registration.
@@ -35,9 +36,10 @@ snapshot/progress reads and discovery refresh; no Design/preview/source APIs.
 
 ## Freshness
 
-2026-10-27: reviewed through `9efc5b3` and the unified Activity change.
+2026-10-27: reviewed through `504044a` and the activity-picker refinements.
 Removed `src/source.mjs`, `test/source.test.mjs` and `test/fixtures/loops.yml`,
 source/draft UI and APIs, and Acorn/YAML dependencies. Replaced Observe/History
-tabs with Activity and automatic retained outcomes. Considered runtime,
+tabs with Activity; retained outcomes now use the same exclusive picker as
+flowchart/progress/agents/inspector/query, without a dropdown narrative. Considered runtime,
 distribution manifest, package metadata, docs and regression tests.
 No workflow runner or fleet scaffold copied.

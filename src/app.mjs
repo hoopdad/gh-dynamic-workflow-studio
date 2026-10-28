@@ -113,8 +113,6 @@ function renderHeading() {
     const outcomeSuffix = current?.result && typeof current.result.status === "string" ? ` / ${current.result.status.toUpperCase()}` : "";
     $("run-status").textContent = current ? `${statusText(current)}${outcomeSuffix}` : "NO RUN";
     $("export-run").disabled = !current;
-    $("results-panel").hidden = !current || !(current.terminal || current.status === "paused" ||
-        current.result != null || current.error || current.failure || current.reason);
     renderActivityView();
     $("stop-notice").hidden = !current;
     if (current) {
@@ -462,8 +460,6 @@ function renderProgress() {
 }
 
 function render() {
-    const description = state.snapshot?.runs.find((run) => run.workflowName === state.workflow)?.description;
-    $("workflow-description").textContent = description ?? "Workflows appear when local Copilot session records are available.";
     renderHeading(); renderRunList(); renderGraph(); renderAgents(); renderInspector(); renderProgress(); renderTeamAnswer();
 }
 function workflowOptions() {

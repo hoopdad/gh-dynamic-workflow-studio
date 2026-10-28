@@ -45,6 +45,9 @@ test("project ellipsis cancels without changes and reloads all project state aft
         await expect(page.locator("#graph")).toContainText("No recorded run selected.");
         await expect(page.locator("[data-view], #source-editor")).toHaveCount(0);
         await expect(page.locator("#results-panel")).toBeHidden();
+        await page.locator('[data-activity-view="outcomes"]').click();
+        await expect(page.locator("#results-panel")).toBeVisible();
+        await expect(page.locator("#results")).toHaveText("No run selected.");
         expect(instance.projectRoot).toBe(local.otherProject);
         await expect(page.locator("#error")).toBeHidden();
     } finally {
@@ -189,9 +192,9 @@ test("activity cards select one view, default to flowchart and retain state acro
     await page.goto(studio.url);
     await expect(page.locator("#connection")).toContainText("Connected");
     const selectors = page.locator("[data-activity-view]");
-    await expect(selectors).toHaveCount(5);
+    await expect(selectors).toHaveCount(6);
     await expect(page.locator('[data-activity-view="flowchart"]')).toHaveAttribute("aria-pressed", "true");
-    for (const view of ["flowchart", "progress", "query", "agents", "inspector"]) {
+    for (const view of ["flowchart", "progress", "query", "agents", "inspector", "outcomes"]) {
         const card = page.locator(`[data-activity-view="${view}"]`);
         await card.focus();
         await page.keyboard.press("Enter");
@@ -446,6 +449,7 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
     await page.goto(studio.url);
     await expect(page.locator("#connection")).toContainText("Connected");
     await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+    await expect(page.locator("#workflow-description")).toHaveCount(0);
     await expect(page.locator("[data-view], #design-panel, #source-editor, #graph-layer")).toHaveCount(0);
     await expect(page.locator("#results-panel")).toBeHidden();
     await expect(page.locator("#workflow")).toHaveValue("example");
@@ -487,7 +491,10 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
     await expect(page.locator("#run-list")).not.toContainText("live-run");
     await expect(page.locator('[data-filter="running"]')).toHaveAttribute("aria-pressed", "false");
     await page.getByRole("button", { name: "example completed past-run" }).click();
+    await expect(page.locator("#results-panel")).toBeHidden();
+    await page.locator('[data-activity-view="outcomes"]').click();
     await expect(page.locator("#results-panel")).toBeVisible();
+    await expect(page.locator("#graph-panel")).toBeHidden();
     await expect(page.locator("#results")).toContainText("Missing approval");
     await expect(page.locator("#run-status")).toContainText("COMPLETED / BLOCKED");
     await expect(page.locator("#stop-notice")).toContainText("Missing approval");
@@ -506,6 +513,9 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
     await expect(page.locator("#warnings")).toContainText("lease has expired");
     await expect(page.locator("#observed-phases .stale")).toContainText("Build");
     await expect(page.locator("#graph .flow-node.task.waiting")).toHaveCount(1);
+    await expect(page.locator("#results-panel")).toBeVisible();
+    await expect(page.locator("#results")).toContainText("No terminal outcome recorded");
+    await page.locator('[data-activity-view="flowchart"]').click();
     await expect(page.locator("#results-panel")).toBeHidden();
 
     await page.locator("#theme").click();
@@ -518,7 +528,7 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
     await expect(page.locator("#results-panel")).toBeHidden();
     await page.locator("#refresh").click();
     await expect(page.locator("#refresh")).toBeEnabled();
-    await expect(page.locator("#workflow-description")).toHaveText("Fixture workflow");
+    await expect(page.locator("#workflow-description")).toHaveCount(0);
     f.mutate((db) => db.exec("UPDATE workflow_runs SET revision = 20 WHERE run_id = 'live-run'"));
     await expect(page.locator("#inspector")).toContainText("20", { timeout: 6000 });
     expect(pageErrors).toEqual([]);
@@ -526,7 +536,7 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
     await expect(page.locator("#error")).toBeHidden();
 });
 
-test("shows newly retained outcomes without switching views and never invents an outcome for a stale run", async ({ page }) => {
+test("keeps the selected Outcome and evidence view refreshed without inventing a terminal result for a stale run", async ({ page }) => {
     const local = await fixture();
     let instance;
     try {
@@ -534,6 +544,9 @@ test("shows newly retained outcomes without switching views and never invents an
         await page.goto(instance.url);
         await expect(page.locator("#connection")).toContainText("Connected");
         await expect(page.locator("#results-panel")).toBeHidden();
+        await page.locator('[data-activity-view="outcomes"]').click();
+        await expect(page.locator("#results-panel")).toBeVisible();
+        await expect(page.locator("#results")).toContainText("No terminal outcome recorded");
         local.mutate((db) => db.exec("UPDATE workflow_runs SET status='completed',result_json='false' WHERE run_id='live-run'"));
         await expect(page.locator("#results-panel")).toBeVisible({ timeout: 6000 });
         await expect(page.locator("#results")).toContainText('"result": false');
@@ -556,6 +569,10 @@ test("shows newly retained outcomes without switching views and never invents an
             lease_expires_at_ms=1 WHERE run_id='live-run'`));
         await page.locator("#refresh").click();
         await expect(page.locator("#warnings")).toContainText("lease has expired");
+        await expect(page.locator("#results-panel")).toBeVisible();
+        await expect(page.locator("#results")).toContainText("No terminal outcome recorded");
+        await expect(page.locator('[data-activity-view="outcomes"]')).toHaveAttribute("aria-pressed", "true");
+        await page.locator('[data-activity-view="flowchart"]').click();
         await expect(page.locator("#results-panel")).toBeHidden();
         await expect(page.locator("#error")).toBeHidden();
     } finally {

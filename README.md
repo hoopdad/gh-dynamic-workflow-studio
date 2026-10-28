@@ -8,8 +8,8 @@ runs in one pane, either as a Copilot canvas or in your browser.
 
 Use one **Activity** view for live and past runs. Filter the run list with
 **All / Live / Past**, inspect recorded phases, agents, models and exact token
-counts, and export snapshots. **Outcome & evidence** appears automatically when
-the selected run has a retained outcome or its attempt has settled.
+counts, and export snapshots. Select **Outcome & evidence** in the activity
+picker to inspect the selected run's retained result or failure details.
 
 This is the standalone home of the Studio extracted from
 `enterprise-copilot-fleet-controller`. It does **not** install the fleet
