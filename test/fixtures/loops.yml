@@ -1,0 +1,289 @@
+# HUMAN-EDITED SOURCE: Edit this file directly, then run: ./compact.sh docs/runbooks/loops.yml docs/runbooks/compact-loop.yml
+# Optional local guard automation: ./install-git-hooks.sh
+version: "2.0"
+entities:
+  - name: Architecture
+    description: "End-to-end technical design including principles, toolsets, and frameworks"
+  - name: UserExperience
+    description: "UI/UX design including principles, toolsets, frameworks, user flows, and screen designs"
+  - name: ReleasePlan
+    description: "Release plan containing sprints with goals and acceptance criteria"
+  - name: SprintDesign
+    description: "Screen designs and user flows for current sprint"
+  - name: SprintArchitecture
+    description: "Technical design for current and all prior sprints, organized by tier"
+  - name: SprintPlan
+    description: "Sprint work assignments and task breakdowns"
+  - name: UIWork
+    description: "Built and tested UI components"
+  - name: DeveloperWork
+    description: "Built and tested backend/business logic work"
+  - name: Deployments
+    description: "Deployment scripts and cloud deployments"
+
+roles:
+  - name: Product Owner
+    description: "Defines product vision, manages stakeholders, and prioritizes backlog"
+  - name: Architect
+    description: "Provides principles, toolsets, and frameworks along with end-to-end system designs"
+  - name: Scrum Master
+    description: "Facilitates sprints, removes roadblocks, makes sure that Agile principles are followed"
+  - name: Developer
+    description: "Builds, tests, and refines the product during each sprint"
+  - name: Designer
+    description: "Focus User Experience including optimal UI flows, screen layouts, screen designs, color schemes and themes, light/dark mode"
+  - name: DevOps Engineer
+    description: "Writes and runs scripts to test, validate, scan, build and deploy"
+  - name: Stakeholder
+    description: "Provides input, feedback, and strategic direction"
+  - name: Critic
+    description: "Reviews requirement-to-outcome and outcome-to-requirement traceability and completion-check suitability. Every role's mandatory corrections need an original user requirement or approved amendment citation and a falsifiable failure reason; demonstrated defects also need evidence. Everything else is optional. Untraceable additions close with 'remove it' only when grounded this way."
+  - name: Network/Infrastructure Security
+    description: "Reviews affected network exposure, routing, private connectivity, identity/access configuration and relevant application-library CVEs only. No broad adversarial campaigns or invented controls. Mandatory corrections need an original user requirement or approved amendment citation and a falsifiable failure reason; demonstrated defects also need evidence. Unaffected scope requires no findings."
+
+workflows:
+  ReleaseLoop:
+    description: "Complete release workflow with iterative sprint delivery"
+    cadence: "Release loop with one or more sprint iterations"
+    steps:
+      - step: "1"
+        id: ArchitectureLoop
+        name: "Architecture Loop"
+        description: "Define end-to-end architecture for the full release scope."
+        inputs:
+          - "Requirements in docs/requirements"
+          - "User prompt"
+        outputs:
+          - "Architecture: principles, toolsets, frameworks, and end-to-end technical design"
+        owner: "Architect"
+        reviewers:
+          - "Product Owner"
+          - "Network/Infrastructure Security"
+          - "Critic"
+        completeWhen: "Emitted architecture schema/contract checks pass; reviewers verify the checks cover requirements and assess suitability."
+
+      - step: "2"
+        id: UserExperienceLoop
+        name: "User Experience Loop"
+        description: "Define full-scope UX including flows, screen designs, layout principles, and design frameworks."
+        inputs:
+          - "Requirements in docs/requirements"
+          - "User prompt"
+          - "Architecture"
+        outputs:
+          - "UserExperience: UX principles, toolsets, frameworks, user flows, and screen direction"
+        owner: "Designer"
+        reviewers:
+          - "Product Owner"
+          - "Critic"
+        completeWhen: "Emitted UX schema/contract checks pass; reviewers assess coverage and suitability, with qualitative observations non-blocking."
+
+      - step: "3"
+        id: ReleasePlanLoop
+        name: "Release Plan Loop"
+        description: "Create a release plan with one or more sprints, each with goals and acceptance criteria."
+        inputs:
+          - "Architecture"
+          - "UserExperience"
+          - "Requirements in docs/requirements"
+          - "User prompt"
+        outputs:
+          - "ReleasePlan"
+        owner: "Product Owner"
+        reviewers:
+          - "Stakeholder"
+          - "Architect"
+          - "Designer"
+          - "Critic"
+        completeWhen: "Emitted release-plan validation checks pass; reviewers verify requirement coverage and that sprint 1 starts with a deployed azd walking skeleton."
+
+      - step: "4"
+        id: SprintLoop
+        name: "Sprint Loop"
+        description: "Execute the following substeps for each sprint in the release plan."
+        substeps:
+          - step: "4.1"
+            id: SprintDesignLoop
+            name: "Sprint Design Loop"
+            description: "Design UI for current sprint items and any previously blocked items needing design decisions."
+            inputs:
+              - "Sprint"
+              - "Architecture"
+              - "UserExperience"
+              - "Open blocked backlog items"
+            outputs:
+              - "SprintDesign: sprint-level user flows and screen designs"
+            owner: "Designer"
+            reviewers:
+              - "Product Owner"
+              - "Critic"
+            completeWhen: "Emitted design schema/contract checks pass and reviewers verify suitability; assigned design work also passes in the deployed environment."
+
+          - step: "4.2"
+            id: SprintArchitectureLoop
+            name: "Sprint Architecture Loop"
+            description: "Refine architecture for this sprint and resolve architecture blockers from prior sprints."
+            inputs:
+              - "Sprint"
+              - "Architecture"
+              - "Blocked architecture decisions"
+            outputs:
+              - "SprintArchitecture: holistic design updated for all prior sprints plus current sprint"
+              - "Tier-specific architecture files in docs/requirements/<tier>"
+            owner: "Architect"
+            reviewers:
+              - "Product Owner"
+              - "Critic"
+              - "Network/Infrastructure Security"
+            completeWhen: "Emitted architecture schema/contract checks pass and reviewers verify suitability against committed requirements."
+
+          - step: "4.3"
+            id: SprintPlanLoop
+            name: "Sprint Plan Loop"
+            description: "Plan sprint work with dependency-aware parallel fan-out. Sprint 1 starts with a devops task marked walkingSkeleton:true, with no dependencies, deploying a walking skeleton through azd. All other sprint-1 tasks transitively depend on it. Every assignment's doneWhen includes passing in the deployed environment. Accepted scope changes land as committed docs/requirements edits plus tests, not runtime dispositions."
+            inputs:
+              - "Sprint"
+              - "SprintArchitecture"
+              - "SprintDesign"
+            outputs:
+              - "SprintPlan"
+              - "AssignedWorkUIDeveloper"
+              - "AssignedWorkDeveloper"
+              - "AssignedWorkDevOpsEngineer"
+              - "AssignedWorkDesigner"
+            owner: "Scrum Master"
+            reviewers:
+              - "Product Owner"
+              - "Architect"
+              - "Critic"
+            completeWhen: "Emitted plan schema/dependency checks pass, all todos are assigned, and independent work is dispatched in parallel; reviewers verify the checks, deployed-first dependencies and requirement coverage."
+
+          - step: "4.4"
+            id: AssignedWorkUIDeveloperLoop
+            name: "Assigned Work - UI Developer Loop"
+            description: "Build, deploy, and validate UI work continuously against the walking skeleton."
+            inputs:
+              - "AssignedWorkUIDeveloper"
+              - "SprintDesign"
+              - "Architecture"
+              - "SprintArchitecture"
+              - "WorkRepo"
+            outputs:
+              - "UIWork"
+            owner: "Developer"
+            reviewers:
+              - "Architect"
+              - "Designer"
+              - "Critic"
+            completeWhen: "Emitted checks pass in the deployed environment and reviewers verify that the checks cover assigned requirements."
+
+          - step: "4.5"
+            id: AssignedWorkDeveloperLoop
+            name: "Assigned Work - Developer Loop"
+            description: "Build, deploy, and validate backend and business logic continuously across all relevant tiers."
+            inputs:
+              - "AssignedWorkDeveloper"
+              - "Architecture"
+              - "SprintArchitecture"
+              - "WorkRepo"
+            outputs:
+              - "DeveloperWork"
+            owner: "Developer"
+            reviewers:
+              - "Architect"
+              - "Critic"
+            completeWhen: "Emitted checks pass in the deployed environment and reviewers verify that the checks cover assigned requirements."
+
+          - step: "4.6"
+            id: EndToEndTestLoop
+            name: "End-to-End Test Loop"
+            description: "Continuously run deployed integration tests across UI and backend tiers after each accepted assignment, before releasing dependent work."
+            inputs:
+              - "Architecture"
+              - "SprintDesign"
+              - "UIWork"
+              - "DeveloperWork"
+              - "SprintArchitecture"
+            outputs:
+              - "PASS"
+              - "FAIL with feedback"
+            owner: "Developer"
+            reviewers:
+              - "Architect"
+              - "Critic"
+              - "Product Owner"
+            completeWhen: "Emitted deployed E2E checks pass and reviewers verify requirement coverage and check suitability. A reported FAIL remains a failure, not completed work."
+
+          - step: "4.7"
+            id: DevOpsWorkLoop
+            name: "DevOps Work Loop"
+            description: "Deploy the initial walking skeleton through azd and continuously scan, build, deploy and probe each assignment. DevOps tasks participate in the same dependency graph as implementation, not a late stage."
+            inputs:
+              - "Architecture"
+              - "UIWork"
+              - "DeveloperWork"
+            outputs:
+              - "Scripts in scripts/"
+              - "Deployments"
+            owner: "DevOps Engineer"
+            reviewers:
+              - "Architect"
+              - "Critic"
+              - "Developer"
+            completeWhen: "Cloud-deployed system passes emitted tests/probes and reviewers verify the checks are appropriate. All deployment uses azd within existing authority."
+
+          - step: "4.8"
+            id: SprintReviewLoop
+            name: "Sprint Review Loop"
+            description: "Run sprint demo and validate system behavior from workstation to cloud."
+            inputs:
+              - "Deployments"
+              - "SprintPlan"
+              - "Scripts in scripts/"
+            outputs:
+              - "Additional backlog items in ReleasePlan only for original requirements, approved amendments or demonstrated defects preventing them; other suggestions stay optional"
+            owner: "Product Owner"
+            reviewers:
+              - "Scrum Master"
+              - "Critic"
+              - "Architect"
+              - "Network/Infrastructure Security"
+            completeWhen: "Emitted deployed acceptance checks pass and Git accounts for intended sprint changes; reviewers verify the checks cover committed requirements."
+
+          - step: "4.9"
+            id: SprintRetroLoop
+            name: "Sprint Retrospective Loop"
+            description: "Retrospective on workflow quality and work outcomes, then capture improvements."
+            inputs:
+              - "Sprint review outcomes"
+              - "Error and communication metrics"
+              - "Process observations"
+            outputs:
+              - "Optional improvements for Architecture, UserExperience, and ReleasePlan artifacts; mandatory corrections require user-requirement or approved-amendment grounding"
+              - "Documented retrospective inputs and decisions"
+            owner: "Product Owner"
+            reviewers:
+              - "Scrum Master"
+              - "Critic"
+              - "Architect"
+              - "Network/Infrastructure Security"
+              - "Designer"
+              - "Developer"
+            completeWhen: "Emitted artifact schema/consistency checks pass; reviewers assess check suitability and record process suggestions as observations."
+
+      - step: "5"
+        id: ReleaseCloseoutLoop
+        name: "Release Closeout Loop"
+        description: "Document completion status of all requirements and finalize release artifacts."
+        inputs:
+          - "ReleasePlan"
+          - "All prior sprint outputs"
+        outputs:
+          - "ReleaseNotes"
+          - "Updated README"
+        owner: "Product Owner"
+        reviewers:
+          - "Stakeholder"
+          - "Architect"
+          - "Critic"
+        completeWhen: "Emitted release acceptance and Git reconciliation checks pass; reviewers verify coverage of committed requirements and tests."

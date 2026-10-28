@@ -1,0 +1,32 @@
+name: Studio validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - run: npm run build
+      - run: npm --prefix dist/dynamic-workflow-studio ci --omit=dev
+      - run: node dist/dynamic-workflow-studio/bin/dynamic-workflow-studio.mjs --help
+      - run: npm pack --dry-run
