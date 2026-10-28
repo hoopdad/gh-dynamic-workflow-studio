@@ -7,8 +7,7 @@
   <script nonce="__NONCE__">
     (() => {
       const param = new URLSearchParams(window.location.search).get("scoutTheme");
-      const theme = ["light", "dark"].includes(param) ? param :
-        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const theme = ["light", "dark", "github"].includes(param) ? param : "github";
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>

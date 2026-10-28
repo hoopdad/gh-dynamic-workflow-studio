@@ -520,7 +520,7 @@ test("unifies Activity with Live/Past filters, retained outcomes, refresh and sn
 
     await page.locator("#theme").click();
     const theme = await page.locator("html").getAttribute("data-theme");
-    expect(["light", "dark"]).toContain(theme);
+    expect(["light", "dark", "github"]).toContain(theme);
 
     await page.locator('[data-filter="running"]').click();
     await page.locator("#follow").click();
@@ -653,7 +653,59 @@ test("opens compact outcome details without page scrolling and refreshes exact m
     }
 });
 
-test("grows an observed-only parallel flow, keeps task cards live, queries evidence and uses both palettes", async ({ page }) => {
+test("defaults to GitHub dark regardless of system preference while honoring explicit theme overrides", async ({ page }) => {
+    for (const colorScheme of ["light", "dark"]) {
+        await page.emulateMedia({ colorScheme });
+        await page.goto(studio.url);
+        await expect(page.locator("#theme")).toHaveText("GitHub dark");
+        await expect(page.locator("body")).toHaveCSS("background-color", "rgb(13, 17, 23)");
+    }
+    await page.goto(`${studio.url}?scoutTheme=invalid`);
+    await expect(page.locator("#theme")).toHaveText("GitHub dark");
+    for (const theme of ["light", "dark"]) {
+        await page.goto(`${studio.url}?scoutTheme=${theme}`);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+    }
+    await expect(page.locator("#error")).toBeHidden();
+});
+
+test("opens GitHub dark directly and cycles all three themes without losing the activity selection", async ({ page }) => {
+    await page.goto(`${studio.url}?scoutTheme=github`);
+    await expect(page.locator("#connection")).toContainText("Connected");
+    const theme = page.locator("#theme");
+    await expect(theme).toHaveText("GitHub dark");
+    await expect(theme).toHaveAccessibleName("Change theme: GitHub dark");
+    await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(13, 17, 23)");
+    await expect(page.locator("body")).toHaveCSS("color", "rgb(240, 246, 252)");
+    await expect(page.locator(".brand-mark")).toHaveCSS("background-color", "rgb(35, 134, 54)");
+    await expect(page.locator(".brand-mark")).toHaveCSS("color", "rgb(255, 255, 255)");
+    await page.locator("#graph .flow-node.task").click();
+    await expect(page.locator("#task-drawer")).toHaveCSS("background-color", "rgb(21, 27, 35)");
+    await page.locator("#close-task").click();
+    await page.locator('[data-activity-view="outcomes"]').click();
+    await theme.focus();
+    for (const [name, background] of [
+        ["Cream / espresso", "rgb(245, 238, 223)"],
+        ["Midnight blue / copper", "rgb(12, 23, 41)"],
+        ["GitHub dark", "rgb(13, 17, 23)"],
+    ]) {
+        await page.keyboard.press("Enter");
+        await expect(theme).toHaveText(name);
+        await expect(page.locator("body")).toHaveCSS("background-color", background);
+        await expect(theme).toBeFocused();
+        await expect(page.locator("#results-panel")).toBeVisible();
+    }
+    await page.waitForTimeout(2200);
+    await expect(theme).toHaveText("GitHub dark");
+    await expect(page.locator('[data-activity-view="outcomes"]')).toHaveAttribute("aria-pressed", "true");
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.locator("#toggle-workspace").click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.locator("#error")).toBeHidden();
+});
+
+test("grows an observed-only parallel flow, keeps task cards live, queries evidence and preserves the original palettes", async ({ page }) => {
     const local = await fixture();
     let instance;
     try {

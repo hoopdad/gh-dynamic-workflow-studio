@@ -500,13 +500,16 @@ async function poll(force = false) {
     } finally { state.polling = false; }
 }
 
+const themes = { light: "Cream / espresso", dark: "Midnight blue / copper", github: "GitHub dark" };
 function renderTheme() {
-    const dark = document.documentElement.dataset.theme === "dark";
-    $("theme").textContent = dark ? "Midnight blue / copper" : "Cream / espresso";
-    $("theme").setAttribute("aria-label", `Toggle theme: ${dark ? "Midnight blue / copper" : "Cream / espresso"}`);
+    const name = themes[document.documentElement.dataset.theme];
+    $("theme").textContent = name;
+    $("theme").setAttribute("aria-label", `Change theme: ${name}`);
 }
 $("theme").addEventListener("click", () => {
-    document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    const names = Object.keys(themes);
+    const index = names.indexOf(document.documentElement.dataset.theme);
+    document.documentElement.dataset.theme = names[(index + 1) % names.length];
     renderTheme();
 });
 renderTheme();

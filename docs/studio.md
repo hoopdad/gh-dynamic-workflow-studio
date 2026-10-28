@@ -140,8 +140,14 @@ used to estimate per-process tokens.
 agent-label lookups. Answers update with observations; this is a bounded
 read-only evidence lookup, not free-form AI reasoning or a conversation with
 running agents. No prompt, message or execution control is sent.
-The theme toggle switches between **Cream / espresso** and
-**Midnight blue / copper**, retaining the existing Studio layout.
+The theme button cycles through **Cream / espresso**, **Midnight blue / copper**
+and **GitHub dark**, retaining the existing Studio layout. GitHub dark uses
+[GitHub Primer's default dark palette](https://github.com/primer/primitives/blob/main/src/tokens/base/color/dark/dark.json5):
+charcoal backgrounds, off-white text, green accents/primary surfaces and blue
+link colors, with the usual red/yellow status colors. Open with
+`?scoutTheme=github` to select it directly; `light` and `dark` still select the
+original schemes. Without a valid override, **GitHub dark** is the default,
+regardless of the system's light/dark preference.
 
 Live and historical views always use the selected run's retained phase records,
 not the current source's phases.
@@ -224,4 +230,4 @@ snapshot export without writes, literal rendering of hostile labels,
 history pinning, live refresh, observed parallel flow and task selection, bounded
 evidence summaries/queries, in-pane drawer/focus handling, exact token attribution,
 append/deduplication/partial usage records, final-outcome projection and human task
-names, both theme palettes, narrow layouts and visible errors.
+names, all three theme palettes and cycling, narrow layouts and visible errors.
