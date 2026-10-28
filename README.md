@@ -11,11 +11,6 @@ Use one **Activity** view for live and past runs. Filter the run list with
 counts, and export snapshots. Select **Outcome & evidence** in the activity
 picker to inspect the selected run's retained result or failure details.
 
-This is the standalone home of the Studio extracted from
-`enterprise-copilot-fleet-controller`. It does **not** install the fleet
-controller, register delivery workflows, run agents, or start/stop/resume
-workflows. It does not inspect or edit workflow source.
-
 **Requirements:** Node.js **24 or newer** (including `node:sqlite`), npm, and a
 modern browser. The canvas additionally requires a GitHub Copilot CLI build with
 the experimental `createCanvas` extension API; it has been checked with CLI
@@ -25,7 +20,7 @@ installation commands; no Bash, PowerShell, Python or compiler is required.
 
 ## 2. Install
 
-Clone this repository and restore its locked dependencies:
+Clone this repository and install the exact dependency versions recorded in `npm-shrinkwrap.json`:
 
 ```text
 git clone https://github.com/hoopdad/gh-dynamic-workflow-studio.git
@@ -178,9 +173,3 @@ node dist/dynamic-workflow-studio/bin/dynamic-workflow-studio.mjs "<project-path
 `npm pack` also produces an installable npm archive with the runtime, CLI, installer,
 documentation and dependency lock. No transpilation is needed. Development tests
 and fleet-controller files are excluded from the runtime distribution.
-
-## Provenance and license
-
-Extracted from `gh-dynamic-workflows/studio` at fleet-controller commit
-`d168e7a`, retaining the observation adapters and regression tests.
-Licensed under [MIT](LICENSE).
