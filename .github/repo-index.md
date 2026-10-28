@@ -20,6 +20,19 @@
   production dependencies and project/global registration.
 - `scripts/build.mjs`: copies distribution into `dist/dynamic-workflow-studio`.
 - `test/`: Node regression tests and Playwright `studio.spec.mjs`.
+- `example-workflows/`: catalog of standalone workflows to install into other
+  repositories, not workflows used by Studio. `issue-driven-delivery/extension.mjs`
+  registers the SDK workflow; `workflow.mjs` owns orchestration, GitHub adapter,
+  structural ownership/requirement guards and role prompts. Its README covers
+  the AI installation contract, concurrent same-branch writers and critique.
+  The runner drains ready issues sequentially, scopes journals/worktrees per
+  issue, stacks PR bases on accepted predecessor branches and publishes ordered
+  approval/merge metadata in PR bodies. `stackAfter` validates continuation;
+  pending or changed parent PRs cannot silently admit a new feature.
+  Its dependency-free `install.mjs` requires an explicit target Git root and
+  copies only the two runtime modules; it never runs the workflow or changes
+  GitHub. All example tests live alongside it (`workflow.test.mjs`,
+  `install.test.mjs`); they are not part of Studio's root test/check commands.
 
 ## Navigation and checks
 
@@ -30,6 +43,9 @@ Runtime source has no fleet-controller dependencies. Keep distribution paths in
 Use `npm run check`, `npm test`, `npm run test:ui`, `npm run build`.
 CI runs those checks on Windows, Ubuntu and macOS with Node 24.
 SDK imports resolve from Copilot at canvas launch, not npm dependencies.
+Example workflow SDK imports likewise resolve inside Copilot; import only its
+SDK-independent `workflow.mjs` in Node tests. Run example tests/checks separately
+using that example's README; there are no dependencies on the root package.
 There are no production npm dependencies. Workflow selection comes only from
 recorded runs, not installed source. The HTTP API exposes project scope,
 snapshot/progress reads and discovery refresh; no Design/preview/source APIs.
@@ -43,3 +59,14 @@ tabs with Activity; retained outcomes now use the same exclusive picker as
 flowchart/progress/agents/inspector/query, without a dropdown narrative. Considered runtime,
 distribution manifest, package metadata, docs and regression tests.
 No workflow runner or fleet scaffold copied.
+
+2026-10-28: reviewed through `ce38df1` plus the new
+`example-workflows/README.md` and the self-contained `issue-driven-delivery/`
+package (runtime, installer, README and colocated tests). Removed the temporary
+root test addition and restored the root README/check script; no application,
+distribution, dependency or Studio control-plane changes. Examples use the
+experimental `defineWorkflow` API and must be explicitly installed/registered
+in a target repository; Studio remains read-only.
+The example's queue/stack revision keeps the same two-module runtime payload;
+stack order uses ordinary GitHub PR base/head relationships, not a new SDK/API
+dependency. Intake ends at an empty queue or blocker, never by merging PRs.
