@@ -252,6 +252,8 @@ function renderGraph() {
 function renderObservedGraph() {
     const current = detail();
     const graph = $("graph");
+    const runKey = current ? JSON.stringify([current.sessionId, current.runId]) : "";
+    const sameRun = graph.querySelector(".flow-surface")?.dataset.runKey === runKey;
     const scroll = { left: graph.scrollLeft, top: graph.scrollTop };
     const focusedTask = graph.contains(document.activeElement) ? document.activeElement.dataset.task : null;
     const flow = observedFlow(current);
@@ -275,6 +277,7 @@ function renderObservedGraph() {
     $("clear-phase").hidden = !state.phase && !state.task;
     if (!current) { empty(graph, "No recorded run selected."); return; }
     const surface = element("div", null, "flow-surface");
+    surface.dataset.runKey = runKey;
     surface.style.zoom = state.graphZoom / 100;
     surface.style.width = `${flow.width}px`;
     surface.style.height = `${flow.height}px`;
@@ -343,10 +346,17 @@ function renderObservedGraph() {
         surface.append(button);
     }
     graph.append(surface);
-    graph.scrollLeft = scroll.left;
+    graph.scrollLeft = sameRun ? scroll.left : (graph.scrollWidth - graph.clientWidth) / 2;
     graph.scrollTop = scroll.top;
     if (focusedTask) [...surface.querySelectorAll("[data-task]")].find((button) => button.dataset.task === focusedTask)?.focus({ preventScroll: true });
 }
+
+new ResizeObserver(() => {
+    const graph = $("graph");
+    if (graph.classList.contains("execution-map") && graph.clientWidth) {
+        graph.scrollLeft = (graph.scrollWidth - graph.clientWidth) / 2;
+    }
+}).observe($("graph"));
 
 function inspectFields(container, fields) {
     const dl = element("dl");

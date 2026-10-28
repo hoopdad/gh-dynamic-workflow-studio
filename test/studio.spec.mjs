@@ -266,6 +266,44 @@ test("collapses the workspace without losing selection, filters or keyboard acce
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("centers wide activity flowcharts in their card and preserves scrolling across refreshes", async ({ page }) => {
+    const local = await fixture();
+    let instance;
+    try {
+        local.mutate((db) => {
+            for (let i = 2; i <= 6; i++) db.prepare(
+                "INSERT INTO workflow_agents SELECT run_id,?,phase_id,label,agent_type,status,requested_model,resolved_model,started_at_ms,completed_at_ms,active_ms FROM workflow_agents WHERE run_id='live-run' AND agent_id='a1'"
+            ).run(`a${i}`);
+        });
+        instance = await startStudio(local.project, { sessionsRoot: local.sessionsRoot });
+        await page.goto(instance.url);
+        const graph = page.locator("#graph");
+        await expect(graph.locator(".flow-node.task")).toHaveCount(6);
+        const centerOffset = () => graph.evaluate((node) => {
+            const viewport = node.getBoundingClientRect();
+            const start = node.querySelector('[data-task="start"]').getBoundingClientRect();
+            return Math.abs(start.left + start.width / 2 - (viewport.left + node.clientWidth / 2));
+        });
+        expect(await graph.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+        await expect.poll(centerOffset).toBeLessThan(2);
+        await page.locator("#toggle-workspace").click();
+        await expect.poll(centerOffset).toBeLessThan(2);
+        await page.setViewportSize({ width: 800, height: 900 });
+        await expect.poll(centerOffset).toBeLessThan(2);
+        await graph.evaluate((node) => { node.scrollLeft = 100; });
+        await page.waitForTimeout(2200);
+        expect(await graph.evaluate((node) => node.scrollLeft)).toBe(100);
+        await page.locator('[data-activity-view="agents"]').click();
+        await page.locator('[data-activity-view="flowchart"]').click();
+        await expect.poll(centerOffset).toBeLessThan(2);
+        await expect(page.locator("#error")).toBeHidden();
+    } finally {
+        await page.close();
+        await instance?.close();
+        await local.cleanup();
+    }
+});
+
 test("zooms flowchart text, cards and connectors without hijacking ordinary scrolling", async ({ page }) => {
     await page.goto(studio.url);
     const task = page.locator('[data-task="agent:a1"]');
