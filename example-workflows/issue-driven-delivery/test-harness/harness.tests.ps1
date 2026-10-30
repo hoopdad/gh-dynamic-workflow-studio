@@ -113,6 +113,8 @@ Check 'Setup generates exactly three stable ordered immutable parent requirement
         $existing = @{ number = 91; title = $parent.title; body = $parent.body; state = 'OPEN' }
         Equal (Resolve-LabParentIssue $parent @($existing) 'offline-123').number 91
         Equal (Resolve-LabParentIssue $parent @() 'offline-123') $null
+        $emptyCliResult = '[]' | ConvertFrom-Json -AsHashtable
+        Equal (Resolve-LabParentIssue $parent $emptyCliResult 'offline-123') $null
         Reject { Resolve-LabParentIssue $parent @($existing, $existing) 'offline-123' } 'Duplicate'
         $existing.body += "`nAdded requirement"
         Reject { Resolve-LabParentIssue $parent @($existing) 'offline-123' } 'requirements/state changed'

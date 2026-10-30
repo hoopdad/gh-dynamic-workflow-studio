@@ -327,7 +327,7 @@ $common
 function Resolve-LabParentIssue {
     param([Collections.IDictionary]$Parent, $Issues, [string]$TestRunId)
     $marker = "<!-- lab-delivery-test:$TestRunId`:$($Parent.key) -->"
-    $existing = @($Issues | Where-Object { $_.body.Contains($marker) })
+    $existing = @($Issues | Where-Object { $null -ne $_ -and $_.body.Contains($marker) })
     if ($existing.Count -gt 1) { throw 'Duplicate run marker; do not create or silently rewrite issues' }
     if (-not $existing.Count) { return $null }
     $current = $existing[0]
