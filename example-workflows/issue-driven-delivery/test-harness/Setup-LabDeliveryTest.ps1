@@ -142,7 +142,8 @@ try {
                 $state = @(Get-ChildItem -LiteralPath $item.path -File -Recurse -Force |
                     Where-Object { $_.Name -match '\.tfstate(\.backup)?$' })
                 if ($state.Count) { throw 'State-bearing worktree must be reconciled by its original deployment owner' }
-                [void](Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'worktree', 'remove', '--force', $item.path))
+                [void](Invoke-LabCommand git @('-c', 'core.longpaths=true', '-C', $manifest.repositoryRoot,
+                    'worktree', 'remove', '--force', $item.path))
             }
             foreach ($item in $plan | Where-Object kind -eq 'branch') {
                 if ($item.remote) {
