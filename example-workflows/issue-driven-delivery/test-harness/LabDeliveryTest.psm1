@@ -136,15 +136,29 @@ function Get-LabSharedBaseline {
             "https://management.azure.com$($dependency.id)?api-version=$($dependency.apiVersion)",
             '--subscription', $Manifest.subscriptionId, '-o', 'json', '--only-show-errors') | ConvertFrom-Json -AsHashtable
         if ($raw.id -ine $dependency.id -or $raw.type -ine $dependency.type) { throw 'Shared dependency identity/type mismatch' }
+        $location = $raw['location']
+        if (-not $location -and $raw.type -ieq 'Microsoft.CognitiveServices/accounts/deployments') {
+            $parentId = $raw.id -replace '/deployments/[^/]+$', ''
+            $parents = @($Manifest.sharedDependencies | Where-Object { $_.role -ceq 'foundryAccount' -and $_.id -ieq $parentId })
+            if ($parents.Count -ne 1) { throw 'Model deployment must belong to the selected existing Foundry account' }
+            $parent = Invoke-LabCommand az @('rest', '--method', 'get', '--url',
+                "https://management.azure.com$parentId`?api-version=$($parents[0].apiVersion)",
+                '--subscription', $Manifest.subscriptionId, '-o', 'json', '--only-show-errors') | ConvertFrom-Json -AsHashtable
+            if ($parent.id -ine $parentId -or $parent.type -ine 'Microsoft.CognitiveServices/accounts') { throw 'Model parent identity mismatch' }
+            $location = $parent.location
+        }
         # Deliberately omit keys, connection strings, instrumentation keys and arbitrary resource bodies.
         $configuration = [ordered]@{
-            id = $raw.id; type = $raw.type; location = $raw['location']
+            id = $raw.id; type = $raw.type; location = $location
             tags = $raw['tags']; identity = $raw['identity']
             publicNetworkAccess = $raw.properties['publicNetworkAccess']
             networkAcls = $raw.properties['networkAcls']
             disableLocalAuth = $raw.properties['disableLocalAuth']
             allowSharedKeyAccess = $raw.properties['allowSharedKeyAccess']
             minimumTlsVersion = $raw.properties['minimumTlsVersion']
+            provisioningState = $raw.properties['provisioningState']
+            sku = $raw['sku']; model = $raw.properties['model']
+            endpoints = $raw.properties['endpoints']; primaryEndpoints = $raw.properties['primaryEndpoints']
         }
         if ($raw.type -ieq 'Microsoft.Network/virtualNetworks') {
             $configuration.addressSpace = $raw.properties.addressSpace
@@ -155,7 +169,8 @@ function Get-LabSharedBaseline {
             })
             $configuration.peerings = $raw.properties.virtualNetworkPeerings
         }
-        $result += @{ role = $dependency.role; status = $(if ($raw['location'] -eq 'westus3') { 'ready' } else { 'blocked' })
+        $result += @{ role = $dependency.role; status = $(if ($location -eq 'westus3' -and
+                    $raw.properties['provisioningState'] -eq 'Succeeded') { 'ready' } else { 'blocked' })
             intendedUse = $dependency.intendedUse; ownerSource = $dependency.ownerSource; configuration = $configuration }
     }
     return $result

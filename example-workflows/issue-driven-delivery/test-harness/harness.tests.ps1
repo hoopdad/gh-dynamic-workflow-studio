@@ -171,4 +171,31 @@ Check 'PowerShell entry points and shared module parse' {
         if ($errors.Count) { throw ($errors | Out-String) }
     }
 }
+Check 'Model deployments inherit only the freshly verified selected account region when child metadata omits location' {
+    $m = Fixture
+    $account = "/subscriptions/$($m.subscriptionId)/resourceGroups/shared/providers/Microsoft.CognitiveServices/accounts/foundry"
+    $m.sharedDependencies = @(
+        @{ role = 'foundryAccount'; id = $account; type = 'Microsoft.CognitiveServices/accounts'
+            apiVersion = '2025-06-01'; ownerSource = 'owner/source@revision'; intendedUse = 'existing account' },
+        @{ role = 'modelDeployment'; id = "$account/deployments/existing"; type = 'Microsoft.CognitiveServices/accounts/deployments'
+            apiVersion = '2024-10-01'; ownerSource = 'owner/source@revision'; intendedUse = 'existing model' }
+    )
+    $result = & (Get-Module LabDeliveryTest) {
+        param($manifest)
+        function Invoke-LabCommand {
+            param($Program, $Arguments)
+            $url = $Arguments[$Arguments.IndexOf('--url') + 1]
+            $id = ([Uri]$url).AbsolutePath
+            $raw = @{ id = $id; type = 'Microsoft.CognitiveServices/accounts'; location = 'westus3'
+                properties = @{ provisioningState = 'Succeeded' } }
+            if ($id.EndsWith('/deployments/existing')) {
+                $raw.type = 'Microsoft.CognitiveServices/accounts/deployments'
+                $raw.Remove('location')
+            }
+            return $raw | ConvertTo-Json -Depth 10
+        }
+        @(Get-LabSharedBaseline $manifest)
+    } $m
+    Equal @($result.status) @('ready', 'ready')
+}
 Write-Output "$script:passed offline harness checks passed; no external commands or mutations executed."
