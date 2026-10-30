@@ -84,6 +84,14 @@ Worktrees use configurable persistent application-external roots. Initial
 requirements allow CRLF/LF equivalence only and bounded quote-only corrections;
 journaled validated plans retain canonical requirements for ID-only repairs.
 Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
+`test-harness/Setup-LabDeliveryTest.ps1` and `Teardown-LabDeliveryTest.ps1`
+share explicit run/private-manifest identity and exact inventories.
+Setup separates inventory/reset/bootstrap/three-parent creation; no app build
+or automatic workflow launch. Teardown requires a workflow-delivered pinned
+owner procedure and exact mutation/readback inventory, preserves shared roots
+and fails closed on unknown ownership/closure. `LabDeliveryTest.psm1` owns
+scope guards; `observe-runs.mjs` reuses Studio's read-only store, not runtime
+control. Offline scope/parser tests use PowerShell 7.2+ via Node's test runner.
 UI/UX selection/artifact and native-stack/replay tests remain colocated.
 No paths added/deleted; Studio runtime and distribution are unchanged.
 Intake ends at an empty queue or blocker, never by merging PRs.
@@ -91,3 +99,6 @@ Intake ends at an empty queue or blocker, never by merging PRs.
 2026-10-30: reviewed from `7dfc027` for the four approved local runtime
 adaptations. Updated example runtime, colocated regression tests and README;
 no legacy-run migration, delivery-policy or Studio-runtime changes.
+Added `test-harness/` lifecycle scripts, shared guards, run observer, README and
+offline tests. Run `node --test example-workflows\issue-driven-delivery\test-harness\harness.test.mjs`
+alongside the two example suites; root Studio test/check commands are unchanged.

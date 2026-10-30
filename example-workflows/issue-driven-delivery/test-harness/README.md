@@ -1,0 +1,202 @@
+# Private Note Assistant integration harness
+
+PowerShell 7.2+, Node 24+, Git, authenticated `gh`, isolated lab Azure CLI and
+a responsive Linux Docker daemon are required. No package installation is needed.
+This harness never builds the application or invokes a model/workflow.
+
+Run the offline checks **before** reset or delivery:
+
+```powershell
+node --test example-workflows\issue-driven-delivery\workflow.test.mjs example-workflows\issue-driven-delivery\install.test.mjs example-workflows\issue-driven-delivery\test-harness\harness.test.mjs
+node --check example-workflows\issue-driven-delivery\extension.mjs
+node --check example-workflows\issue-driven-delivery\workflow.mjs
+node --check example-workflows\issue-driven-delivery\install.mjs
+node --check example-workflows\issue-driven-delivery\test-harness\observe-runs.mjs
+```
+
+## Private configuration and staged setup
+
+Keep configuration, manifest, state and sanitized receipts outside every checkout
+and disposable worktree. Use a unique explicit `testRunId` for a new experiment;
+the same ID and manifest are mandatory for setup, delivery ownership and teardown.
+Do not renew/reset model allowances by choosing a new ID during recovery.
+Protect the evidence directory with the current user's normal private ACLs.
+Never put credentials, auth profiles, raw model payloads or Terraform state in Git.
+
+Create a private JSON configuration with these fields (all IDs/paths are explicit,
+not inferred from ambient Azure defaults):
+
+```json
+{
+  "schemaVersion": 1,
+  "testRunId": "note-assistant-YYYYMMDD-01",
+  "repository": "hoopdad/lab-greeting-agent",
+  "repositoryRoot": "C:\\work\\lab-greeting-agent",
+  "defaultBranch": "main",
+  "sourceRoot": "C:\\work\\gh-dynamic-workflow-studio",
+  "sourceRevision": "<full committed revision of that checkout>",
+  "labRoot": "C:\\work\\mikeo-lab",
+  "worktreeRoot": "C:\\work\\.delivery-worktrees\\lab-greeting-agent",
+  "evidenceRoot": "C:\\private\\note-assistant-YYYYMMDD-01",
+  "subscriptionId": "<verified West subscription UUID>",
+  "tenantId": "<verified lab tenant UUID>",
+  "deploymentTarget": "lab-greeting-agent-westus3",
+  "supervisorSessionId": "<owning Copilot session UUID>",
+  "modelAttemptLimit": 1000,
+  "sharedDependencies": [],
+  "previous": {
+    "azureReconciled": false,
+    "processClosureVerified": false,
+    "diagnosticsPreserved": false
+  }
+}
+```
+
+`sharedDependencies` needs exactly one owner-verified existing West US 3 resource
+for each role: `foundryAccount`, `foundryProject`, `modelDeployment`, `vnet`,
+`appInsights`, `logAnalytics`, `keyVault`, `storage`. An optional `registry` is
+also reusable. Each entry has `role`, exact ARM `id`, `type`, `apiVersion`,
+`ownerSource` (source path/revision), and `intendedUse`. A missing `id` is allowed
+for inventory/reporting, but blocks all destructive setup stages. Verify current
+provisioning, endpoint, permissions, model suitability and subnet delegations
+independently; a selected resource ID alone proves none of these.
+
+Use the existing authorized GitHub identity in a process scoped to this repository;
+never print tokens or silently change the desktop's default identity. Azure reads
+use only `<labRoot>\.azure-cli` and explicit tenant/subscription checks. If its
+session needs authentication, use the owner's `scripts\Connect-LabAzure.ps1`.
+No automatic login, credential-cache copying or dynamic extension installation.
+
+```powershell
+$harness = 'C:\work\gh-dynamic-workflow-studio\example-workflows\issue-driven-delivery\test-harness'
+$run = 'note-assistant-YYYYMMDD-01'
+$manifest = "C:\private\$run\manifest.json"
+# Default is read-only Inspect. Apply Inventory writes private evidence only.
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -ConfigurationPath "C:\private\$run\configuration.json"
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -ConfigurationPath "C:\private\$run\configuration.json" -Mode Apply
+```
+
+Inventory captures exact old issues/node IDs, PRs, branch SHAs, worktrees,
+file hashes, state-file **locations/hashes only**, terminal/active workflow
+observations and nonsecret shared configuration. It preserves local workflow
+fixes/tests before any removal. It refuses to overwrite an existing baseline.
+It never stops another runtime or reads secrets/state content. The read-only
+observer uses Studio's existing schema-v1 adapter, not SQL writes or a second
+workflow control plane; observation errors fail closed.
+
+Before reset, reconcile every old deployment/state asset through its original
+owner and preserve its evidence. Stop any active delivery in its owning Copilot
+session, prove owned processes/listeners closed, and record those evidence
+references in `previous`. Set `azureReconciled` / `processClosureVerified` only
+after those independent checks, never just to bypass a blocker. Unknown ownership,
+state-bearing disposable worktrees or dependent PRs/stacks block reset.
+Open PR/stack disposition must be explicitly resolved; the harness does not
+silently close/merge/restack them.
+
+```powershell
+# Inspect each exact plan first; -WhatIf also suppresses mutation.
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Reset
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Reset -Mode Apply
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Bootstrap -Mode Apply
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Issues -Mode Apply
+```
+
+Reset uses enumerated leaf removals, normal commits and exact disposable worktree/
+branch/issue identities. It never removes a checkout, `.git`, shared parent,
+default branch or session root, rewrites history or force-pushes. Bootstrap
+contains only README, instructions/index, ignores, nonsecret target/queue inputs
+and the installer-copied runtime. Source must match the pinned commit and runtime
+hashes. Issues are created A/B/C oldest-first with stable run markers. Reruns reuse
+exact matching open issues; changed requirements or duplicate markers fail closed.
+It commits/pushes the queue normally; it does not launch delivery.
+Partial failures are retained, never silently retried. Re-inspect before rerunning;
+identity/HEAD drift requires explicit reconciliation, not an automatic reset.
+
+In a Copilot session scoped to the target, verify workflow registration and both
+installed file hashes. Confirm actual Docker builds/registry transport, private
+connectivity and durable attempt accounting before invoking **one** workflow using
+the current supported CLI interface:
+
+```powershell
+Set-Location C:\work\lab-greeting-agent
+copilot workflow run issue-driven-delivery --args "@.github\delivery-input.json" --result-file "C:\private\<run>\workflow-result.json"
+```
+
+No `maxRounds` is generated. Preserve normal native permissions; unavailable
+permissions are blockers, never a reason to grant unrestricted tooling.
+Record `delivery.started`, owning session/run identity and `delivery.stopped`
+truthfully in the manifest. Errored/interrupted runs resume only in the owning
+session; completed blocked results use the documented continuation path.
+
+## Delivery-owned cleanup protocol
+
+Before or alongside **every** mutation, workflow agents must atomically publish
+`delivery.ownershipPath` outside disposable paths:
+
+```json
+{
+  "schemaVersion": 1,
+  "testRunId": "<same run>",
+  "assets": [
+    {
+      "kind": "arm",
+      "id": "<exact new app ARM ID>",
+      "type": "Microsoft.App/containerApps",
+      "ownerRunId": "<same run>",
+      "state": "planned"
+    }
+  ],
+  "cleanup": {
+    "path": "C:\\private\\<run>\\owner-cleanup.ps1",
+    "sha256": "<reviewed script hash>",
+    "sourceRevision": "<workflow-delivered commit>"
+  }
+}
+```
+
+`assets` includes planned/created/absent resources, data namespaces, image
+artifacts, grants, shared-configuration additions and processes. Kind is `arm`,
+`blobNamespace`, `image`, `grant`, `sharedConfiguration` or `process`.
+Namespace/image entries additionally bind `parentId` to an inventoried service
+and `namespace` to the exact run ID, not a broad prefix. Process entries need
+`ownerHandle`, `creationTime`, `closureProcedure` and exact local ports/children;
+a historical PID is not ownership. Shared changes require `ownerRoot=labRoot`,
+`ownerProcedure` and `baselineHash`; only their original owner may restore them.
+No shared root or pre-existing ARM resource can be deleted.
+
+The workflow must implement and publish the owner cleanup procedure, including
+partial-creation handling, **before mutating**. This harness does not prebuild
+application Terraform, teardown implementation or product tests.
+Review its source/hash and exact inspection plan before approving execution.
+Its interface is:
+
+```text
+owner-cleanup.ps1 -Mode Inspect|Apply|Verify -TestRunId <id> -ManifestPath <path> -InventoryPath <path>
+```
+
+Emit JSON only on stdout. `Inspect` returns `plan`, entries exactly
+`{id,kind,action}` matching the private inventory (`delete`, or `restore` for
+shared configuration). `Apply` executes the correct owner procedures: validate
+the exact Terraform destroy plan against only app-owned IDs, apply the same
+saved artifact, preserve state/evidence until reconciliation; remove exact
+namespace/image/grant entries; close retained owned jobs, not arbitrary PIDs.
+`Verify` independently reads actual ARM/data/registry/process state and returns
+`assets:[{id,status:"absent"|"restored",evidence}]` plus
+`closure:"proven closed"`. Unknown results must stay blocked. A handler report
+is evidence to audit, not a sandbox or permission to trust arbitrary code.
+
+After acceptance evidence is saved and owning workflow has stopped:
+
+```powershell
+& "$harness\Teardown-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest
+& "$harness\Teardown-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Mode Apply
+```
+
+Repeat with the same manifest safely; absent assets remain absent. Missing
+inventory after delivery started, changed cleanup source, unresolved assets,
+shared drift or uncertain process closure are blockers, not success.
+The receipt survives under `evidenceRoot`; repository, issues, PRs/native stack
+and shared logs are preserved. No shared resource group/VNet/Foundry/model/
+storage/vault/monitoring/Bastion/VM deletion or name-prefix-only deletion exists.
+Compare selected nonsecret shared configuration, not expected new telemetry.
+Application acceptance, workflow acceptance and cleanup are separate verdicts.

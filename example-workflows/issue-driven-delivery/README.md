@@ -356,6 +356,11 @@ review layers or inferred standards merely to make the process look complete.
 
 ## Validate without delivery side effects
 
+For the scoped private Note Assistant integration lifecycle, see
+[`test-harness/README.md`](test-harness/README.md). That harness inventories and
+bootstraps an explicitly authorized test repository; it never implements the
+application, invokes a model, or launches delivery automatically.
+
 From this example folder (no root package or npm installation required):
 
 ```text
