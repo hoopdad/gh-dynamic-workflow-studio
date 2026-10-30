@@ -275,6 +275,20 @@ Native tool authorization must already support the intended execution; the
 runner never grants unrestricted permissions or changes trust settings.
 Autonomous operation is the goal, not permission to label blocked work successful.
 
+For explicitly reviewed project-specific grants, see the
+[permission profile guide](../PERMISSIONS.md). Supply `-PermissionProfilePath`
+to both Inspect and Apply:
+
+```powershell
+& "$harness\Invoke-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -PermissionProfilePath "C:\private\$run\permissions.json"
+```
+
+Inspect validates the profile and displays permission arguments without launching.
+Apply passes them to the actual Copilot child process; without the parameter,
+permissions remain unchanged. An invalid profile fails before setup or delivery.
+The example is inspection-only, not a full unattended delivery grant. Native
+deny rules/policies and the already-executed-cycle guards remain unchanged.
+
 `lifecycle-receipt.json` preserves separate setup, execution and teardown verdicts,
 including both errors if execution and cleanup fail. Exit success requires all
 three stages to pass; a non-success workflow result is not delivery success.

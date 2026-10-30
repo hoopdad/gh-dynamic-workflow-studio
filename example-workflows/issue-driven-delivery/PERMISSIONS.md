@@ -91,14 +91,37 @@ The supplied roots, exact write requests and command families make the proposal
 inspectable; they do not prove that its operations are safe. Do not invent
 approval records, credentials, resource IDs or ownership evidence to satisfy it.
 
-## Native handoff is a separate step
+## Apply a reviewed profile to the lifecycle launcher
+
+The [lifecycle runner](test-harness/README.md#clean-lifecycle) accepts an explicit
+`-PermissionProfilePath`. Selecting this option requests the reviewed profile's
+native grants for **that child process only**; a profile alone is not approval.
+Without the option, the runner's command and permissions are unchanged.
+
+```powershell
+& "$harness\Invoke-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest `
+  -PermissionProfilePath "C:\private\$run\permissions.json" -Mode Inspect
+```
+
+Inspect validates and displays argument data without granting permissions or
+launching Copilot. When the operator separately launches with `-Mode Apply`,
+the runner validates the profile before setup and passes its scoped requests
+to the actual `copilot ... workflow run` child. Roots come from the validated
+manifest, not ambient directories or fields a profile can redefine. Keep the
+profile private, review changes before reuse, and do not add unrestricted flags.
+
+The argument list places permission options before fixed-arity `-C` and the
+workflow subcommand so variadic tool/URL options cannot consume the command.
+Fresh-run, receipt, lock and ownership guards still apply. Selecting a profile
+does not authorize replaying an already executed cycle or waive cleanup.
+
+## Native inheritance still needs verification
 
 Any approved requests must apply to the **actual launching Copilot process**.
 A chat instruction or session-only approval in another process is not enough.
-The preview deliberately does not install its argument proposal into the test
-harness or a user's configuration. Existing deny rules must not be discarded.
-Preserve argument boundaries and verify final option placement with the installed
-CLI; variadic tool/URL options must not consume workflow/subcommand arguments.
+The preview itself never installs grants or edits configuration. The launcher's
+explicit option passes reviewed requests; existing deny rules, managed policy,
+identity/RBAC and native path/URL checks remain in force.
 
 The trusted workflow extension also invokes Git and `gh` directly for its
 orchestration. Those subprocesses are **outside agent-tool approval prompts**;
@@ -107,10 +130,11 @@ trusting/loading it and retain the actual GitHub identity's repository limits.
 
 CLI 1.0.105 documents `--allow-tool`, `--allow-url`, `--add-dir` and native
 per-request approval prompts (`copilot help permissions` and `copilot --help`).
-Non-interactive `workflow run` cannot display those prompts. Passing a reviewed
-profile through a launcher and confirming that its workflow agents receive the
-intended native approvals remains a separate integration verification; this
-example does not claim that has passed. A starter profile cannot guarantee
-unattended completion of arbitrary future project commands.
+Non-interactive `workflow run` cannot display those prompts. Offline regressions
+verify exact profile arguments at the real runner's mocked child boundary and
+reject an invalid profile before setup. Native help parsing has also been checked.
+Actual workflow-agent inheritance remains a separate live verification; these
+checks do not prove it. The inspection starter still cannot authorize a complete
+Architect stage or guarantee unattended completion.
 
 See [GitHub's CLI usage and approval documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli).

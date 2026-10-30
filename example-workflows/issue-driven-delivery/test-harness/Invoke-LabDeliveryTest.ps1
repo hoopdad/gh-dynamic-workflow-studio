@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$TestRunId,
     [Parameter(Mandatory)][string]$ManifestPath,
     [string]$ConfigurationPath,
-    [ValidateSet('Inspect', 'Apply')][string]$Mode = 'Inspect'
+    [ValidateSet('Inspect', 'Apply')][string]$Mode = 'Inspect',
+    [string]$PermissionProfilePath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -21,11 +22,27 @@ if (Test-Path -LiteralPath $ManifestPath) {
     Assert-LabManifest $manifest $TestRunId $ManifestPath
 } else { throw 'A fresh cycle requires an explicit private configuration or an unexecuted setup manifest' }
 
+$permissionArguments = @()
+if ($PermissionProfilePath) {
+    Assert-LabUnlinkedPath $PermissionProfilePath
+    $proposal = Invoke-LabCommand node @(
+        (Join-Path $PSScriptRoot '..\review-permissions.mjs'),
+        '--profile', $PermissionProfilePath, '--workspace', $manifest.repositoryRoot,
+        '--worktrees', $manifest.worktreeRoot, '--evidence', $manifest.evidenceRoot
+    ) | ConvertFrom-Json -AsHashtable
+    if ($proposal.mode -cne 'proposal-only' -or $proposal.nativeArgumentProposal[0] -cne '-C') {
+        throw 'Unexpected permission preview format'
+    }
+    $permissionArguments = @($proposal.nativeArgumentProposal | Select-Object -Skip 2)
+}
+$nativeArguments = @($permissionArguments) + @('-C', $manifest.repositoryRoot)
+
 $receiptPath = Join-Path $manifest.evidenceRoot 'lifecycle-receipt.json'
 if (Test-Path -LiteralPath $receiptPath) { throw 'This cycle already has a receipt; do not silently repeat execution' }
 if ($Mode -eq 'Inspect' -or $WhatIfPreference) {
     @{ testRunId = $TestRunId; mode = 'inspection only'; repository = $manifest.repository
         flow = @('setup', 'execute', 'teardown'); setup = @('Inventory', 'Reset', 'Bootstrap', 'Issues')
+        permissionProfilePath = $PermissionProfilePath; permissionArguments = $permissionArguments
         resume = $false; receiptPath = $receiptPath; automaticMutations = $false } | ConvertTo-Json -Depth 5
     return
 }
@@ -66,7 +83,8 @@ try {
         $inputPath = Join-Path $current.repositoryRoot '.github\delivery-input.json'
         Push-Location -LiteralPath $current.repositoryRoot
         try {
-            & copilot -C $current.repositoryRoot workflow run issue-driven-delivery `
+            # Fixed-arity -C terminates variadic permission options before the subcommand.
+            & copilot @nativeArguments workflow run issue-driven-delivery `
                 --args "@$inputPath" --result-file $resultPath 2>&1 |
                 ForEach-Object { Write-Host $_ }
             $code = $LASTEXITCODE

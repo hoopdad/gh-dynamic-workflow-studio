@@ -97,7 +97,7 @@ Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
 share explicit run/private-manifest identity and exact inventories.
 `Invoke-LabDeliveryTest.ps1` provides the outer fresh setup -> execute -> teardown
 cycle; cleanup is attempted in `finally` and each stage retains its own verdict.
-It never resumes an earlier delivery or overrides native permissions.
+It never resumes an earlier delivery or bypasses native safeguards.
 Setup separates inventory/reset/bootstrap/three-parent creation; no app build
 or automatic workflow launch. Explicit read-only `Preflight` reports deployment
 dependencies without gating delivery or independently safe repository setup.
@@ -147,3 +147,13 @@ write/push/deploy/cleanup requests; the helper emits argument data only and
 rejects broad patterns, overlapping roots, linked/traversing paths and unsafe
 origins. Workflow-agent inheritance is not claimed verified. No runtime,
 installation, harness-launch or native permission configuration changed.
+
+2026-10-30: reviewed from `39fbf5e` for explicit launcher profile handoff.
+`Invoke-LabDeliveryTest.ps1 -PermissionProfilePath` validates a reviewed profile
+with manifest-bound roots before setup and forwards its scoped arguments to the
+native child, before fixed-arity `-C` and the workflow subcommand. Inspect only
+previews; omitting the parameter preserves existing behavior. Fresh-process
+stage regressions verify exact child arguments, mutation-free inspection and
+invalid-profile rejection before setup. No paths added/deleted, runtime or
+installer changes, persistent permission settings or relaxed ownership/replay
+guards. Actual workflow-agent permission inheritance remains unverified.

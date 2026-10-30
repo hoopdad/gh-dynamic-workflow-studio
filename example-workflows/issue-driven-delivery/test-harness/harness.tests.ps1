@@ -394,7 +394,7 @@ $global:labCycleTrace.Add('teardown')
     }
 }
 foreach ($scenario in @('success', 'execution-failure')) {
-    Check "Real staged setup and teardown retain helpers in a fresh process ($scenario)" {
+    Check "Real stages retain helpers and reviewed child permissions in a fresh process ($scenario)" {
         $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-real-cycle-$([guid]::NewGuid().ToString('N'))"
         $harness = Join-Path $temporary 'harness'
         $m = Fixture
@@ -411,6 +411,10 @@ foreach ($scenario in @('success', 'execution-failure')) {
             foreach ($name in @('extension.mjs', 'workflow.mjs')) {
                 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\$name") -Destination (Join-Path $installed $name)
             }
+            foreach ($name in @('review-permissions.mjs', 'permissions.example.json')) {
+                Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\$name") -Destination (Join-Path $temporary $name)
+            }
+            [void][IO.Directory]::CreateDirectory((Join-Path $m.repositoryRoot '.git'))
             $m.runtimeHashes = Get-LabRuntimeHashes $installed
             $m.deploymentTarget = 'offline-note'
             $m.sharedDependencies = @()
@@ -440,6 +444,12 @@ $global:parents = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRo
     ConvertFrom-Json -AsHashtable
 $global:scenario = $Scenario
 $global:invocations = 0
+$global:nodeExecutable = (Get-Command node -CommandType Application).Source
+$profilePath = Join-Path (Split-Path $Harness -Parent) 'permissions.example.json'
+$profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json -AsHashtable
+$global:expectedPermissionArguments = @('--allow-tool') + @($profile.tools.pattern) +
+    @("--add-dir=$($global:fixture.worktreeRoot)", "--add-dir=$($global:fixture.evidenceRoot)", '--allow-url') +
+    @($profile.urls.origin)
 function global:git {
     $global:LASTEXITCODE = 0
     if ($args -contains '--show-toplevel') { return $global:fixture.repositoryRoot }
@@ -461,6 +471,10 @@ function global:gh {
     }
 }
 function global:node {
+    if (([string]$args[0]).EndsWith('review-permissions.mjs')) {
+        & $global:nodeExecutable @args
+        return
+    }
     $global:LASTEXITCODE = 0
     if (-not ([string]$args[0]).EndsWith('observe-runs.mjs')) { throw 'Unexpected fixture Node operation' }
     $runs = @()
@@ -481,6 +495,12 @@ function global:copilot {
     if ($global:invocations -ne 1 -or $args -notcontains 'issue-driven-delivery') {
         throw 'Unexpected fixture workflow invocation'
     }
+    $expected = @($global:expectedPermissionArguments) + @('-C', $global:fixture.repositoryRoot,
+        'workflow', 'run', 'issue-driven-delivery', '--args',
+        "@$(Join-Path $global:fixture.repositoryRoot '.github\delivery-input.json')",
+        '--result-file', (Join-Path $global:fixture.evidenceRoot 'workflow-result.json'))
+    if ((ConvertTo-Json -InputObject @($args) -Compress) -cne
+        (ConvertTo-Json -InputObject $expected -Compress)) { throw 'Reviewed arguments did not reach the native child exactly' }
     @{ schemaVersion = 1; testRunId = $global:fixture.testRunId; assets = @() } |
         ConvertTo-Json | Set-Content -LiteralPath $global:fixture.delivery.ownershipPath
     $global:LASTEXITCODE = 7
@@ -490,10 +510,31 @@ function global:copilot {
         $global:LASTEXITCODE = 0
     }
 }
+$runner = Join-Path $Harness 'Invoke-LabDeliveryTest.ps1'
+$before = (Get-FileHash -LiteralPath $ManifestPath).Hash
+$inspection = & $runner $global:fixture.testRunId $ManifestPath $null Inspect `
+    -PermissionProfilePath $profilePath | ConvertFrom-Json -AsHashtable
+if ($global:invocations -or $inspection.automaticMutations -or
+    (ConvertTo-Json -InputObject $inspection.permissionArguments -Compress) -cne
+    (ConvertTo-Json -InputObject $global:expectedPermissionArguments -Compress)) {
+    throw 'Inspection failed to preview the exact permissions without launching'
+}
+$invalidPath = Join-Path $global:fixture.evidenceRoot 'invalid-permissions.json'
+$profile.tools[0].pattern = 'shell'
+$profile | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $invalidPath
+$invalidFailure = $null
+try {
+    & $runner -TestRunId $global:fixture.testRunId -ManifestPath $ManifestPath `
+        -PermissionProfilePath $invalidPath -Mode Apply | Out-Null
+} catch { $invalidFailure = $_.Exception.Message }
+if ($invalidFailure -notmatch 'node failed' -or $global:invocations -or (Get-FileHash -LiteralPath $ManifestPath).Hash -cne $before -or
+    (Test-Path -LiteralPath (Join-Path $global:fixture.evidenceRoot 'lifecycle-receipt.json'))) {
+    throw 'An invalid profile must fail before setup, mutation, execution or lifecycle receipts'
+}
 $failure = $null
 try {
-    & (Join-Path $Harness 'Invoke-LabDeliveryTest.ps1') -TestRunId $global:fixture.testRunId `
-        -ManifestPath $ManifestPath -Mode Apply | Out-Null
+    & $runner -TestRunId $global:fixture.testRunId -ManifestPath $ManifestPath `
+        -PermissionProfilePath $profilePath -Mode Apply | Out-Null
 } catch { $failure = $_.Exception.Message }
 $receipt = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'lifecycle-receipt.json') -Raw |
     ConvertFrom-Json -AsHashtable
