@@ -44,7 +44,7 @@ Each request needs a reason. Unknown fields and duplicate requests fail.
 
 | Field | Requested native capability | Review requirement |
 | --- | --- | --- |
-| `tools` | `shell(program subcommand)` or an exact `server(tool)` | Use recorded requests, not guessed catch-all rules. Common shell/interpreter commands, wildcards and whole-tool grants are rejected. |
+| `tools` | `shell(program subcommand)`, a supported inspection command, or an exact `server(tool)` | Use recorded requests, not guessed catch-all rules. Common shell/interpreter commands, wildcards and whole-tool grants are rejected. |
 | `directories` | `--add-dir` for a literal path under an operator-supplied root | This also trusts configuration there, including skills/agents. It is not a read-only grant. Never substitute a home, drive root or shared parent. |
 | `writes` | Absolute-file `write(...)` rules resolved from a bound root | Require owned, individually enumerated files. Outside-checkout writes also need a containing directory request. Do not include credentials, immutable baselines, harness receipts or unrelated state. |
 | `urls` | Explicit HTTPS origins, or explicit HTTP loopback development endpoints | No wildcard hosts, credentials, query strings or repository-path-shaped URL constraints. An origin is not repository-specific authorization. |
@@ -58,6 +58,16 @@ keep worktrees and private evidence outside the checkout and separate from each 
 This intentionally conservative format does not cover every native selector.
 Leave unsupported script/interpreter requests unresolved for specific native
 review rather than weakening a rule to make validation pass.
+
+Named PowerShell cmdlets such as `shell(Get-ChildItem)` and Unix utilities such
+as `shell(ls)` are supported through an explicit inspection-command list.
+This does not approve `powershell`, `pwsh`, `bash`, `sh` or arbitrary scripts.
+There is no universal "every read-only command" rule: plugins and versions vary,
+and options/configuration can change side effects. Generic `gh api`, secret/token
+dumps, and mixed-purpose utilities such as `find`, `sed`, `awk` and `env` are not
+read-only shortcuts. A syntactically valid proposal does not prove that native
+matching distinguishes every nested CLI verb; never fall back to a whole-client
+grant when a specific selector fails.
 
 **This is a proposal format, not a sandbox or authority.** Named shell commands
 can have side effects through arguments, configuration, scripts or helpers.

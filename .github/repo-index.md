@@ -157,3 +157,10 @@ stage regressions verify exact child arguments, mutation-free inspection and
 invalid-profile rejection before setup. No paths added/deleted, runtime or
 installer changes, persistent permission settings or relaxed ownership/replay
 guards. Actual workflow-agent permission inheritance remains unverified.
+
+2026-10-30: reviewed from `1a68a4e` for named inspection-command proposals.
+The permission preview additionally accepts an explicit list of PowerShell
+cmdlets and Unix inspection utilities; whole interpreters and arbitrary leaf
+programs remain rejected. Colocated tests cover accepted leaves and mixed-purpose
+or interpreter rejection. No paths added/deleted, runtime/installer changes or
+active launcher permission changes; the expanded project proposal stays private.

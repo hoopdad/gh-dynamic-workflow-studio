@@ -6,6 +6,15 @@ import { pathToFileURL } from "node:url";
 const rootNames = ["workspace", "worktrees", "evidence"];
 const interpreters = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish", "cmd", "pwsh", "powershell", "python", "node", "nodejs",
     "perl", "ruby", "php", "lua", "deno", "bun", "wsl", "env", "sudo", "runas", "eval", "exec", "source", "call", "invoke-expression", "iex"]);
+const inspectionCommands = new Set([
+    "get-childitem", "get-content", "get-item", "get-location", "get-filehash", "get-command", "get-module", "get-psdrive",
+    "get-psprovider", "get-process", "get-service", "get-netadapter", "get-netipaddress", "get-netipconfiguration",
+    "get-netroute", "get-nettcpconnection", "get-netudpendpoint", "get-dnsclient", "get-dnsclientserveraddress",
+    "resolve-dnsname", "test-path", "resolve-path", "select-string", "compare-object", "measure-object", "get-date",
+    "get-culture", "get-uiculture", "get-computerinfo",
+    "ls", "pwd", "cat", "head", "tail", "grep", "wc", "cut", "tr", "stat", "readlink", "realpath", "basename", "dirname",
+    "du", "df", "uname", "whoami", "id", "cmp", "diff", "comm", "sha256sum", "sha512sum", "cksum",
+]);
 
 function object(value, keys, label) {
     if (!value || typeof value !== "object" || Array.isArray(value)
@@ -44,10 +53,11 @@ function tool(entry) {
     const pattern = text(entry.pattern, "Tool pattern");
     text(entry.reason, "Tool reason");
     if (pattern.startsWith("shell(")) {
-        const command = /^shell\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*(?: [a-zA-Z0-9_][a-zA-Z0-9_.-]*)+)\)$/.exec(pattern)?.[1];
+        const command = /^shell\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*(?: [a-zA-Z0-9_][a-zA-Z0-9_.-]*)*)\)$/.exec(pattern)?.[1];
         const executable = command?.split(" ")[0].toLowerCase().replace(/\.exe$/, "");
-        if (!command || interpreters.has(executable) || /^python\d+(?:\.\d+)*$/.test(executable)) {
-            throw new Error("Shell requests require named subcommands, not wildcards, interpreters, flags or shell expressions");
+        if (!command || interpreters.has(executable) || /^python\d+(?:\.\d+)*$/.test(executable)
+            || (!command.includes(" ") && !inspectionCommands.has(command.toLowerCase()))) {
+            throw new Error("Shell requests require named subcommands or supported inspection commands, not wildcards, interpreters, flags or shell expressions");
         }
     } else {
         const match = /^([a-zA-Z0-9_][a-zA-Z0-9_.-]*)\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*)\)$/.exec(pattern);

@@ -56,6 +56,19 @@ test("blanket tools, wildcard families, interpreters and command expressions are
     }
 });
 
+test("named PowerShell and Unix inspection commands work without whole-interpreter or mixed-purpose leaf grants", async (t) => {
+    const { roots, profile } = await fixture(t);
+    profile.tools = ["Get-ChildItem", "Get-Content", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path",
+        "ls", "pwd", "cat", "grep", "stat", "sha256sum"].map((command) => ({ pattern: `shell(${command})`, reason: "Inspection." }));
+    const result = await reviewPermissions(profile, roots);
+    for (const entry of profile.tools) assert.ok(result.nativeArgumentProposal.includes(entry.pattern));
+    for (const command of ["pwsh", "powershell", "bash", "sh", "git", "az", "docker", "kubectl", "find", "sed",
+        "awk", "env", "xargs", "tee", "sort", "uniq", "less", "more", "date", "Get-ChildItem;Remove-Item"]) {
+        profile.tools = [{ pattern: `shell(${command})`, reason: "Rejected broad or mixed-purpose request." }];
+        await assert.rejects(reviewPermissions(profile, roots), /Shell requests/);
+    }
+});
+
 test("path requests cannot escape bindings or request whole-root writes, devices or patterns", async (t) => {
     const { roots, profile } = await fixture(t);
     for (const file of [".", "..\\outside", "docs\\..\\outside", "C:\\foreign\\file", "/foreign/file",
