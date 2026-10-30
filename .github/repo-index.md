@@ -80,6 +80,14 @@ additional npm or CLI extension dependency. Native membership/order/SHA drift
 fails closed; explicit recovery may reuse one pending trailing child.
 Journal v3 caches completed issue deliveries to avoid replaying earlier
 prefixes over native descendants and rechecks the full stack before `done`.
+Worktrees use configurable persistent application-external roots. Initial
+requirements allow CRLF/LF equivalence only and bounded quote-only corrections;
+journaled validated plans retain canonical requirements for ID-only repairs.
+Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
 UI/UX selection/artifact and native-stack/replay tests remain colocated.
 No paths added/deleted; Studio runtime and distribution are unchanged.
 Intake ends at an empty queue or blocker, never by merging PRs.
+
+2026-10-30: reviewed from `7dfc027` for the four approved local runtime
+adaptations. Updated example runtime, colocated regression tests and README;
+no legacy-run migration, delivery-policy or Studio-runtime changes.

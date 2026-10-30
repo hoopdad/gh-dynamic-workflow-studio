@@ -7,6 +7,23 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { finished } from "node:stream/promises";
 
 const exec = promisify(execFile);
+export function resolveWorktreeRoot(requested, projectRoot = process.cwd()) {
+    const root = requested === undefined
+        ? path.join(path.dirname(projectRoot), ".delivery-worktrees", path.basename(projectRoot))
+        : requested;
+    if (typeof root !== "string" || !path.isAbsolute(root)) {
+        throw new Error("worktreeRoot must be an absolute directory path");
+    }
+    const resolved = path.resolve(root);
+    for (const excluded of [projectRoot, tmpdir()]) {
+        const relative = path.relative(path.resolve(excluded), resolved);
+        if (relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))) {
+            throw new Error("worktreeRoot must be outside the application checkout and OS temporary directory");
+        }
+    }
+    return resolved;
+}
+
 export const roles = ["Web", "API", "Infrastructure", "Agent", "Test", "DevOps"];
 const designerRole = "UI/UX Designer";
 const findingOwners = [...roles, designerRole];
@@ -35,18 +52,34 @@ const planSchema = object({
     })),
 });
 
-export function validatePlan(plan, issue) {
-    if (!plan || plan.status !== "ready") throw new Error(`Architect blocked: ${plan?.summary ?? "no plan returned"}`);
-    if (!isSha(plan.sha)) throw new Error("Architect must return a published commit SHA");
-    if (!plan.requirements.length) throw new Error("The issue needs explicit, testable requirements");
+const repairPlanSchema = object(Object.fromEntries(
+    Object.entries(planSchema.properties).filter(([key]) => key !== "requirements")));
+const requirementsSchema = object({ requirements: planSchema.properties.requirements });
+
+class RequirementQuoteError extends Error {}
+
+function validateRequirements(requirements, issue) {
+    if (!requirements?.length) throw new RequirementQuoteError("The issue needs explicit, testable requirements");
+    const source = `${issue.title}\n${issue.body}`.replaceAll("\r\n", "\n");
     const ids = new Set();
-    for (const requirement of plan.requirements) {
+    for (const requirement of requirements) {
         if (!requirement.id.trim() || requirement.id === "DELIVERY" || ids.has(requirement.id)
-            || !requirement.text.trim() || !`${issue.title}\n${issue.body}`.includes(requirement.text)) {
-            throw new Error("Requirements must have unique IDs and quote the selected issue verbatim");
+            || !requirement.text.trim()) {
+            throw new RequirementQuoteError(`Requirements must have unique IDs (not DELIVERY) and nonempty quotes; invalid ID: ${JSON.stringify(requirement.id)}`);
+        }
+        if (!source.includes(requirement.text.replaceAll("\r\n", "\n"))) {
+            throw new RequirementQuoteError(`Requirement ${requirement.id} must quote the selected issue verbatim, including indentation: ${JSON.stringify(requirement.text)}`);
         }
         ids.add(requirement.id);
     }
+    return ids;
+}
+
+export function validatePlan(plan, issue, requirements) {
+    if (!plan || plan.status !== "ready") throw new Error(`Architect blocked: ${plan?.summary ?? "no plan returned"}`);
+    if (!isSha(plan.sha)) throw new Error("Architect must return a published commit SHA");
+    if (requirements) plan = { ...plan, requirements: requirements.map(({ id, text }) => ({ id, text })) };
+    const ids = validateRequirements(plan.requirements, issue);
     const owned = new Map();
     function own(file, role) {
         if (!file || file.includes("\\") || file.startsWith("/") || /[:*?[\]]/.test(file)
@@ -93,6 +126,19 @@ export function validatePlan(plan, issue) {
         throw new Error("Skipped UI/UX design must have no task, files or requirement IDs");
     }
     return plan;
+}
+
+export async function requestPlan(request, issue, requirements) {
+    let plan = await request(0);
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return validatePlan(plan, issue, requirements);
+        } catch (error) {
+            if (requirements || !(error instanceof RequirementQuoteError) || attempt === 2) throw error;
+            const corrected = await request(attempt + 1, error.message, plan);
+            plan = { ...plan, requirements: corrected.requirements };
+        }
+    }
 }
 
 export function validateReport(report, plan, sha) {
@@ -368,10 +414,11 @@ export const deliveryWorkflow = {
         limits: { maxConcurrentSubagents: 6 },
         argsSchema: object({
             deploymentTarget: string,
+            worktreeRoot: string,
             issueNumber: { type: "integer" },
             stackAfter: { type: "integer" },
             readyLabel: string,
-            maxRounds: { type: "integer" },
+            maxRounds: { type: "integer", description: "Optional explicit repair-round cap; omitted means no round limit." },
             maxDeploymentAttempts: { type: "integer" },
             reviewPolls: { type: "integer" },
         }),
@@ -384,13 +431,15 @@ deliveryWorkflow.meta.argsSchema.required = ["deploymentTarget"];
 export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.signal), ctx.signal)) {
     const {
         deploymentTarget, issueNumber = 0, stackAfter = 0, readyLabel = "workflow:ready",
-        maxRounds = 3, maxDeploymentAttempts = 3, reviewPolls = 60,
+        maxRounds, maxDeploymentAttempts = 3, reviewPolls = 60,
     } = ctx.args;
+    const worktreeBase = resolveWorktreeRoot(ctx.args.worktreeRoot);
     if (typeof deploymentTarget !== "string" || !deploymentTarget.trim()
         || typeof readyLabel !== "string" || !readyLabel.trim()
         || !Number.isSafeInteger(issueNumber) || issueNumber < 0
         || !Number.isSafeInteger(stackAfter) || stackAfter < 0
-        || [maxRounds, maxDeploymentAttempts, reviewPolls].some((n) => !Number.isSafeInteger(n) || n < 1)) {
+        || (maxRounds !== undefined && (!Number.isSafeInteger(maxRounds) || maxRounds < 1))
+        || [maxDeploymentAttempts, reviewPolls].some((n) => !Number.isSafeInteger(n) || n < 1)) {
         throw new Error("Supply an explicit deploymentTarget, nonempty readyLabel and positive integer budgets");
     }
     const repo = await ctx.step("v3:repository", () => io.repository());
@@ -417,7 +466,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         const result = await ctx.step(`v3:delivery:${issue.number}`, async () => {
             await io.verifyNativeStack(stack, position === 0 ? issueNumber : issue.number);
             const delivered = await runIssue(ctx, io, {
-                repo, issue, stack, baseBranch, baseSha, deploymentTarget, maxRounds, maxDeploymentAttempts, reviewPolls,
+                repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls,
             });
             if (delivered.status !== "ready") return delivered;
             const nextStack = [...stack, delivered];
@@ -435,13 +484,13 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
     }
 }
 
-async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, maxRounds, maxDeploymentAttempts, reviewPolls }) {
+async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls }) {
     const step = (key, producer) => ctx.step(`v3:issue:${issue.number}:${key}`, producer);
     const branch = `feature/issue-${issue.number}`;
     const label = `delivery:issue-${issue.number}`;
     await step("scope-label", async () => { await io.label(label); return label; });
     const identity = JSON.stringify({ repo: repo.nameWithOwner, parent: issue, branch, baseBranch, baseSha, scopeLabel: label, deploymentTarget });
-    const worktreeRoot = path.join(tmpdir(), "copilot-issue-delivery",
+    const worktreeRoot = path.join(worktreeBase,
         createHash("sha256").update(ctx.runId).digest("hex").slice(0, 16), `issue-${issue.number}`);
     const blocked = (summary) => {
         ctx.log(`BLOCKED: ${summary}`);
@@ -470,10 +519,9 @@ async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, depl
             }
         }
     }
-    let outstanding = await io.issues(repo.nameWithOwner, label);
-    for (let round = 1; round <= maxRounds; round++) {
-        ctx.phase("Design");
-        plan = validatePlan(await agent("Architect", `${round}:design`, `Read the parent and scoped open issues:
+    let outstanding = await step("initial-scoped-issues-v2", () => io.issues(repo.nameWithOwner, label));
+    async function designPlan(round, requirements) {
+        const prompt = `Read the parent and scoped open issues:
 ${JSON.stringify(outstanding)}
 Create ${branch} from ${baseBranch} at ${baseSha} if absent; otherwise continue its remote head.
 This is a stacked feature: inherit that exact tested base, never recreate the branch from the default branch.
@@ -496,17 +544,34 @@ Test owns local/unit/integration tests, local E2E, deployed E2E and post-deploy 
 DevOps owns scan/lint/format checks and deployment orchestration, honoring the project's preference for
 GitHub Actions OR local scripts/tools. Do not introduce a competing delivery stack.
 Provide each role a narrow assignment and requirement IDs. If scope is ambiguous, return blocked.
-Return the published design commit SHA and document path.`, planSchema), issue);
+Return the published design commit SHA and document path.`;
+        const handoff = requirements
+            ? prompt.replace("Quote explicit parent requirements verbatim with stable IDs.",
+                "Reference only the canonical requirement IDs; do not extract, rewrite or return requirement quotes.")
+                + `\nCanonical requirements (read-only): ${JSON.stringify(requirements)}`
+            : prompt;
+        return step(`design-plan-v2:${round}`, () => requestPlan((attempt, diagnostic, previous) => {
+            if (!attempt) return agent("Architect", `${round}:design`, handoff, requirements ? repairPlanSchema : planSchema);
+            return agent("Architect", `${round}:requirements-correction:${attempt}`,
+                `Correct only the requirements JSON from your published design result.
+Do not edit files, commit, push or repeat design/implementation work.
+Validation failure: ${diagnostic}
+Previous requirements: ${JSON.stringify(previous.requirements)}
+Return requirements with unique stable IDs and exact nonempty source quotes from the parent issue,
+including indentation (CRLF/LF differences are allowed). Preserve IDs referenced by assignments.
+Do not add scope or alter any other plan fields.`, requirementsSchema);
+        }, issue, requirements));
+    }
+    for (let round = 1; maxRounds === undefined || round <= maxRounds; round++) {
+        ctx.phase("Design");
+        const initialPlan = await designPlan(1);
+        const requirements = initialPlan.requirements;
+        plan = round === 1 ? initialPlan : await designPlan(round, requirements);
         if (!plan.uiUx.enabled && (uiUxSelected || outstanding.some((item) =>
             item.body?.includes("\nStage: ui-ux\n") || item.body?.includes("\nOwner: UI/UX Designer\n")))) {
             return blocked("UI/UX design cannot be skipped after selection or while designer repair issues remain");
         }
         uiUxSelected ||= plan.uiUx.enabled;
-        const requirements = await step("requirements", () => plan.requirements);
-        if (plan.requirements.length !== requirements.length
-            || plan.requirements.some((item) => !requirements.some((original) => original.id === item.id && original.text === item.text))) {
-            return blocked("Requirements changed during repair; obtain an explicit parent-issue scope update and start a new run");
-        }
         await io.ancestor(plan.sha, await io.head(branch));
         await io.ancestor(baseSha, plan.sha);
         if (!(await io.design(plan.sha, plan.designFile)).trim()) return blocked("Published design document is empty");

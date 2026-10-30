@@ -219,7 +219,7 @@ For PowerShell versions with awkward native JSON quoting, use an input file:
   "deploymentTarget": "approved-preview-environment",
   "issueNumber": 123,
   "stackAfter": 0,
-  "maxRounds": 3,
+  "worktreeRoot": "C:\\delivery-worktrees\\my-app",
   "maxDeploymentAttempts": 3,
   "reviewPolls": 60
 }
@@ -239,11 +239,14 @@ a magic environment provisioner. No production authorization is implied.
 | `issueNumber` | `0` | Zero scans the queue; positive selects the first issue, then normal queue intake resumes |
 | `stackAfter` | `0` | Zero starts a stack; otherwise continue after this workflow-managed, open, latest accepted PR |
 | `readyLabel` | `workflow:ready` | Opt-in queue; removed per feature only after its gates and stack-order publication pass |
-| `maxRounds` | `3` | Design/build/test/review repair rounds per issue before blocking |
+| `worktreeRoot` | Application-specific sibling `.delivery-worktrees/<application-name>` | Absolute persistent parent outside the application checkout and OS temporary directory; paths remain isolated per run/issue/role/round |
+| `maxRounds` | Uncapped | Only an explicitly supplied positive safe integer caps design/build/test/review repair rounds per issue |
 | `maxDeploymentAttempts` | `3` | Deployment/smoke attempts per round |
 | `reviewPolls` | `60` | Ten-second waits for a completed current-SHA review |
 
-These are illustrative circuit breakers, not estimated credit/time budgets.
+Deployment/review budgets and an optional explicit round cap are circuit breakers,
+not estimated credit/time budgets. Omitting `maxRounds` does not replace it with a
+larger arbitrary limit or change cancellation, permissions or runtime controls.
 The six-writer concurrency limit is declared in workflow metadata. Set runtime
 credit/agent/time limits appropriate to the whole queue and your permission
 policy. There is no issue-count cap: intake continues until the ready queue is
@@ -270,6 +273,13 @@ empty, a feature blocks, or the runtime stops the run.
 - The authoritative issue title/body is snapshotted for the run. Scope changes
   require a human update to the parent and a new run, not inferred requirements
   from neighboring code or a reviewer's preferences.
+  Initial requirement quotes allow CRLF/LF equivalence only; wording, case and
+  spacing remain exact. Invalid quotes receive at most two requirements-only
+  corrections without republishing the design or changing other plan fields.
+  Validated plans and initial scoped issues are journaled for reproducible replay.
+  The workflow owns the canonical requirement IDs/quotes; repair output references
+  immutable IDs and omits quote text. Unknown requirement references still fail.
+  This version provides no legacy-journal migration; use it for fresh runs.
 - Repair issues use `delivery:issue-N`, a parent/branch marker and a stable
   stage/requirement/owner/check key. A repeat failure comments on the existing
   open issue. Only a passing rerun of its originating gate closes it. `DELIVERY`
@@ -303,8 +313,8 @@ empty, a feature blocks, or the runtime stops the run.
   Returned blockers are retained; fix them in a new invocation, not by resuming
   the blocked result. Start a new run rather than resuming an older workflow
   definition after upgrading to this native-stack/UI/UX version (journal v3).
-- Worktrees live under the OS temporary directory's `copilot-issue-delivery`
-  subdirectory, separated by run, issue, role and round. Agents remove only their own
+- Worktrees live under the persistent `worktreeRoot` (or its documented sibling
+  default), separated by run, issue, role and round. Agents remove only their own
   clean worktrees after successful pushes. Retain blocked work for recovery;
   inspect its exact path before targeted cleanup. Never delete the shared root.
 - This is a prompt-governed example, not a sandbox or production delivery engine.

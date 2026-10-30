@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { command, githubIO, renderStack, roles, runDelivery, validatePlan, validateReport } from "./workflow.mjs";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { command, githubIO, renderStack, requestPlan, resolveWorktreeRoot, roles, runDelivery, validatePlan, validateReport } from "./workflow.mjs";
 
 const sha = "a".repeat(40);
 const issue = { number: 7, title: "Add a greeting", body: "Show a greeting.", url: "https://github.com/example/app/issues/7", state: "OPEN" };
@@ -365,7 +368,7 @@ test("null parallel reports cannot reach tests/deployment or return done", async
     assert.ok(!f.calls.includes("finish"));
 });
 
-test("requirement IDs/text cannot drift in a repair round", async () => {
+test("repair plans use workflow-owned quotes rather than regenerated text", async () => {
     const f = fixture((label) => {
         if (label === "1:local:Test") return makeReport({ status: "rework", findings: [finding] });
         if (label === "2:design:Architect") {
@@ -375,9 +378,150 @@ test("requirement IDs/text cannot drift in a repair round", async () => {
         }
         return undefined;
     });
-    assert.equal((await f.run()).status, "blocked");
-    assert.ok(!f.calls.includes("2:develop:API"));
-    assert.ok(!f.calls.includes("finish"));
+    const original = f.ctx.agent;
+    f.ctx.agent = async (prompt, options) => {
+        if (options.label.includes(":2:design:")) {
+            assert.equal(options.schema.properties.requirements, undefined);
+            assert.match(prompt, /Canonical requirements \(read-only\)/);
+            assert.match(prompt, /do not extract, rewrite or return requirement quotes/);
+        }
+        if (options.label.includes(":2:local:")) assert.ok(prompt.includes(JSON.stringify([requirement])));
+        return original(prompt, options);
+    };
+    assert.equal((await f.run()).status, "done");
+    assert.ok(f.calls.includes("2:develop:API"));
+});
+
+test("requirement quotes normalize only CRLF/LF, retaining exact wording, case, spacing and IDs", () => {
+    const text = "Show a greeting.\n  Keep private access.";
+    for (const body of [text, text.replaceAll("\n", "\r\n")]) {
+        for (const quote of [text, text.replaceAll("\n", "\r\n")]) {
+            const plan = makePlan();
+            plan.requirements[0].text = quote;
+            assert.equal(validatePlan(plan, { ...issue, body }), plan);
+            assert.equal(plan.requirements[0].text, quote);
+        }
+    }
+    for (const quote of [text.replace("Show", "show"), text.replace("private", "public"), text.replace("\n  ", "\n ")]) {
+        const plan = makePlan();
+        plan.requirements[0].text = quote;
+        assert.throws(() => validatePlan(plan, { ...issue, body: text }), /quote.*verbatim/);
+    }
+    for (const id of ["", " ", "DELIVERY"]) {
+        const plan = makePlan();
+        plan.requirements[0].id = id;
+        assert.throws(() => validatePlan(plan, issue), /unique IDs/);
+    }
+    const duplicate = makePlan();
+    duplicate.requirements.push({ ...requirement });
+    assert.throws(() => validatePlan(duplicate, issue), /unique IDs/);
+    const empty = makePlan();
+    empty.requirements[0].text = "";
+    assert.throws(() => validatePlan(empty, issue), /nonempty quotes/);
+});
+
+test("canonical repair requirements are copied and unknown assignment/designer references still fail", () => {
+    const canonical = Object.freeze([Object.freeze({ ...requirement })]);
+    const repair = makePlan();
+    delete repair.requirements;
+    const plan = validatePlan(repair, issue, canonical);
+    plan.requirements[0].text = "Changed downstream";
+    assert.equal(canonical[0].text, requirement.text);
+    repair.assignments[0].requirementIds = ["R99"];
+    assert.throws(() => validatePlan(repair, issue, canonical), /Invalid assignment/);
+    const designed = makeUiUxPlan();
+    designed.uiUx.requirementIds = ["R99"];
+    assert.throws(() => validatePlan(designed, issue, canonical), /existing requirement IDs/);
+});
+
+test("initial quote-only correction preserves the design and stops after two attempts", async () => {
+    const plan = makePlan();
+    plan.requirements[0].text = "Wrong quote";
+    const attempts = [];
+    const corrected = await requestPlan(async (attempt, diagnostic, previous) => {
+        attempts.push(attempt);
+        if (!attempt) return plan;
+        assert.match(diagnostic, /Requirement R1.*verbatim/);
+        assert.equal(previous.sha, sha);
+        return { requirements: [{ ...requirement }], sha: "b".repeat(40), assignments: [] };
+    }, issue);
+    assert.deepEqual(attempts, [0, 1]);
+    assert.equal(corrected.sha, sha);
+    assert.equal(corrected.assignments, plan.assignments);
+    assert.equal(plan.requirements[0].text, "Wrong quote");
+    const failed = [];
+    await assert.rejects(requestPlan(async (attempt) => {
+        failed.push(attempt);
+        return plan;
+    }, issue), /verbatim/);
+    assert.deepEqual(failed, [0, 1, 2]);
+    let calls = 0;
+    await assert.rejects(requestPlan(async () => {
+        calls++;
+        const invalid = makePlan();
+        invalid.assignments[0].requirementIds = ["R99"];
+        return invalid;
+    }, issue), /Invalid assignment/);
+    assert.equal(calls, 1);
+});
+
+test("validated repair plans replay despite changed live issues without repeating completed workers", async () => {
+    const f = fixture((label) => label === "1:local:Test"
+        ? makeReport({ status: "rework", findings: [finding] }) : undefined);
+    const original = f.ctx.agent;
+    const saved = new Map();
+    f.ctx.agent = async (prompt, options) => {
+        const key = JSON.stringify([prompt, options]);
+        if (!saved.has(key)) saved.set(key, await original(prompt, options));
+        return structuredClone(saved.get(key));
+    };
+    const head = f.io.head;
+    let interrupted = true;
+    f.io.head = async (branch) => {
+        if (interrupted && f.calls.includes("2:design:Architect")) throw new Error("Interrupted after repair plan");
+        return head(branch);
+    };
+    await assert.rejects(f.run(), /Interrupted after repair plan/);
+    interrupted = false;
+    f.io.issues = async () => [];
+    assert.equal((await f.run()).status, "done");
+    assert.equal(f.calls.filter((call) => call === "1:design:Architect").length, 1);
+    assert.equal(f.calls.filter((call) => call === "2:design:Architect").length, 1);
+    assert.equal(f.calls.filter((call) => call === "1:develop:API").length, 1);
+});
+
+test("persistent worktree roots reject relative, checkout and temporary paths and isolate run/issue/role", async () => {
+    const project = path.resolve("application");
+    assert.equal(resolveWorktreeRoot(undefined, project),
+        path.join(path.dirname(project), ".delivery-worktrees", "application"));
+    for (const invalid of ["", "relative", null, 123, project, path.join(project, "worktrees"), tmpdir(), path.join(tmpdir(), "delivery")]) {
+        assert.throws(() => resolveWorktreeRoot(invalid, project), /worktreeRoot/);
+    }
+    const root = path.resolve("..", "configured-worktrees");
+    for (const runId of ["run-one", "run-two"]) {
+        const f = fixture((_label, prompt) => {
+            const hash = createHash("sha256").update(runId).digest("hex").slice(0, 16);
+            assert.ok(prompt.includes(path.join(root, hash, "issue-7", "architect-1")));
+            assert.match(prompt, /never the main checkout/);
+            throw new Error("Observed worktree");
+        }, {}, { worktreeRoot: root });
+        f.ctx.runId = runId;
+        await assert.rejects(f.run(), /Observed worktree/);
+    }
+});
+
+test("repair rounds are uncapped unless an explicit positive safe-integer cap is supplied", async () => {
+    const f = fixture((label) => {
+        if (label === "5:design:Architect") throw new Error("Reached round five");
+        if (label.endsWith(":local:Test")) return makeReport({ status: "rework", findings: [finding] });
+        return undefined;
+    });
+    await assert.rejects(f.run(), /Reached round five/);
+    assert.ok(f.calls.includes("4:local:Test"));
+    assert.ok(!f.calls.includes("file:budget:DELIVERY"));
+    for (const invalid of [0, -1, 1.5, null, "4", Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+        await assert.rejects(fixture(undefined, {}, { maxRounds: invalid }).run(), /positive integer budgets/);
+    }
 });
 
 test("a worker's reported commit must actually be included in the shared remote branch", async () => {
