@@ -4,7 +4,9 @@ PowerShell 7.2+, Node 24+ and Git are harness tooling requirements. Operations
 using GitHub or Azure require authenticated `gh` or isolated lab Azure CLI access,
 respectively. Docker and other delivery prerequisites are workflow-owned project
 requirements, not supervisor launch prerequisites. No package installation is needed.
-This harness never builds the application or invokes a model/workflow.
+Setup and teardown never build the application or invoke a model.
+The lifecycle entry point invokes the installed workflow; workflow agents alone
+own application implementation.
 
 Run the offline checks **before** reset or delivery:
 
@@ -241,3 +243,35 @@ and shared logs are preserved. No shared resource group/VNet/Foundry/model/
 storage/vault/monitoring/Bastion/VM deletion or name-prefix-only deletion exists.
 Compare selected nonsecret shared configuration, not expected new telemetry.
 Application acceptance, workflow acceptance and cleanup are separate verdicts.
+
+## Clean lifecycle
+
+A new test follows **setup -> execute -> teardown**, not resume of an earlier
+delivery. Use a new run identity/private directory and reconcile the previous
+attempt first. A clean repository means bootstrap-only content after the exact
+inventoried reset; the repository, `.git` and history remain intact.
+
+```powershell
+& "$harness\Invoke-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -ConfigurationPath "C:\private\$run\configuration.json"
+& "$harness\Invoke-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -ConfigurationPath "C:\private\$run\configuration.json" -Mode Apply
+```
+
+Default Inspect only describes the cycle. Apply performs Inventory/Reset/
+Bootstrap/Issues, one fresh workflow invocation, and guarded teardown in
+`finally`, including after setup or execution failure. An existing unexecuted
+setup manifest is allowed; an executed attempt, cycle receipt or unresolved
+cycle lock prevents silently starting another invocation. There is no automatic
+retry/resume or environment Preflight gate.
+
+Run from the existing authorized GitHub-owner context and isolated lab profile.
+Native tool authorization must already support the intended execution; the
+runner never grants unrestricted permissions or changes trust settings.
+Autonomous operation is the goal, not permission to label blocked work successful.
+
+`lifecycle-receipt.json` preserves separate setup, execution and teardown verdicts,
+including both errors if execution and cleanup fail. Exit success requires all
+three stages to pass; a non-success workflow result is not delivery success.
+Teardown is always attempted, not forced past ownership/process/state guards.
+Missing ownership after a started workflow remains blocked, even before an
+application was deployed. Hard termination/power loss still requires recovery
+from the preserved inventory; `finally` cannot run in a killed process.

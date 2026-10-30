@@ -185,7 +185,7 @@ Check 'Cleanup is repeatable and unresolved assets/process closure can never be 
     Reject { Assert-LabCleanupReadback $plan $readback } 'required deletion'
 }
 Check 'PowerShell entry points and shared module parse' {
-    foreach ($name in @('Setup-LabDeliveryTest.ps1', 'Teardown-LabDeliveryTest.ps1', 'LabDeliveryTest.psm1')) {
+    foreach ($name in @('Invoke-LabDeliveryTest.ps1', 'Setup-LabDeliveryTest.ps1', 'Teardown-LabDeliveryTest.ps1', 'LabDeliveryTest.psm1')) {
         $tokens = $null
         $errors = $null
         [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $name), [ref]$tokens, [ref]$errors)
@@ -277,6 +277,120 @@ Check 'Repository preparation runs without deployment services while explicit pr
         Remove-Variable -Name labStageFixture -Scope Global
         if (Test-Path -LiteralPath $manifestPath) { Remove-Item -LiteralPath $manifestPath }
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    }
+}
+function LifecycleCase {
+    param([string]$Failure, [switch]$CleanupFailure)
+    $trace = [Collections.Generic.List[string]]::new()
+    $receiptPath = Join-Path ([IO.Path]::GetTempPath()) "lab-cycle-$([guid]::NewGuid().ToString('N')).json"
+    try {
+        $setup = { $trace.Add('setup'); if ($Failure -eq 'setup') { throw 'setup failure' } }.GetNewClosure()
+        $execute = { $trace.Add('execute'); if ($Failure -eq 'execution') { throw 'execution failure' } }.GetNewClosure()
+        $teardown = { $trace.Add('teardown'); if ($CleanupFailure) { throw 'cleanup failure' } }.GetNewClosure()
+        $result = Invoke-LabLifecycle -TestRunId 'offline-123' -Setup $setup -Execute $execute -Teardown $teardown -ReceiptPath $receiptPath
+        $saved = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -AsHashtable
+        Equal @($saved.setup, $saved.execution, $saved.teardown, $saved.status) `
+            @($result.setup, $result.execution, $result.teardown, $result.status)
+        Equal (ConvertTo-LabCanonicalJson $saved.errors) (ConvertTo-LabCanonicalJson $result.errors)
+        return @{ result = $result; trace = @($trace) }
+    } finally {
+        if (Test-Path -LiteralPath $receiptPath) { Remove-Item -LiteralPath $receiptPath }
+    }
+}
+Check 'A successful fresh cycle executes setup, delivery and teardown exactly once' {
+    $case = LifecycleCase
+    Equal $case.trace @('setup', 'execute', 'teardown')
+    Equal $case.result.status 'passed'
+    Equal $case.result.errors @()
+}
+Check 'Setup failure skips execution but still attempts teardown and persists the original failure' {
+    $case = LifecycleCase -Failure setup
+    Equal $case.trace @('setup', 'teardown')
+    Equal $case.result.status 'failed'
+    Equal $case.result.execution 'not started'
+    Equal $case.result.errors[0].stage 'setup'
+    Equal $case.result.teardown 'passed'
+}
+Check 'Execution failure still tears down and cleanup failure cannot hide the execution failure' {
+    $case = LifecycleCase -Failure execution -CleanupFailure
+    Equal $case.trace @('setup', 'execute', 'teardown')
+    Equal $case.result.status 'failed'
+    Equal @($case.result.errors.stage) @('execution', 'teardown')
+    Equal $case.result.execution 'failed'
+    Equal $case.result.teardown 'failed'
+}
+Check 'Successful delivery cannot pass a cycle whose teardown failed' {
+    $case = LifecycleCase -CleanupFailure
+    Equal $case.trace @('setup', 'execute', 'teardown')
+    Equal $case.result.status 'failed'
+    Equal $case.result.execution 'passed'
+    Equal $case.result.errors[0].stage 'teardown'
+}
+Check 'The lifecycle entry point starts once, records a failed command and still invokes teardown' {
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-cycle-entry-$([guid]::NewGuid().ToString('N'))"
+    [void][IO.Directory]::CreateDirectory($temporary)
+    $m = Fixture
+    $m.repositoryRoot = Join-Path $temporary 'application'
+    $m.evidenceRoot = Join-Path $temporary 'evidence'
+    [void][IO.Directory]::CreateDirectory($m.repositoryRoot)
+    $configuration = Join-Path $m.evidenceRoot 'configuration.json'
+    $manifestPath = Join-Path $m.evidenceRoot 'manifest.json'
+    $global:labCycleFixture = $m
+    $global:labCycleTrace = [Collections.Generic.List[string]]::new()
+    function global:az {
+        $global:LASTEXITCODE = 0
+        @{ subscription = $global:labCycleFixture.subscriptionId; tenant = $global:labCycleFixture.tenantId
+            state = 'Enabled' } | ConvertTo-Json
+    }
+    function global:node {
+        $global:LASTEXITCODE = 0
+        '{"runs":[{"sessionId":"owning-session","runId":"new-run","status":"error"}],"warnings":[]}'
+    }
+    function global:copilot {
+        $global:labCycleTrace.Add('execute')
+        $global:LASTEXITCODE = 7
+        'Expected offline execution failure'
+    }
+    try {
+        foreach ($name in @('Invoke-LabDeliveryTest.ps1', 'LabDeliveryTest.psm1')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $temporary $name)
+        }
+        [IO.File]::WriteAllText((Join-Path $temporary 'Setup-LabDeliveryTest.ps1'), @'
+param($TestRunId, $ManifestPath, $ConfigurationPath, $Stage, $Mode)
+$global:labCycleTrace.Add($Stage)
+if ($Stage -eq 'Inventory') {
+    $m = $global:labCycleFixture
+    $m.inventoryPath = Join-Path $m.evidenceRoot 'baseline.json'
+    $m.delivery = @{ started = $false; stopped = $true; ownershipPath = (Join-Path $m.evidenceRoot 'ownership.json') }
+    Write-LabJson $m.inventoryPath @{ runs = @{ runs = @() } }
+    Write-LabJson $ManifestPath $m
+}
+@{ stage = $Stage } | ConvertTo-Json
+'@)
+        [IO.File]::WriteAllText((Join-Path $temporary 'Teardown-LabDeliveryTest.ps1'), @'
+param($TestRunId, $ManifestPath, $Mode)
+$global:labCycleTrace.Add('teardown')
+@{ status = 'verified offline stub' } | ConvertTo-Json
+'@)
+        Write-LabJson $configuration $m
+        $runner = Join-Path $temporary 'Invoke-LabDeliveryTest.ps1'
+        Reject { & $runner -TestRunId $m.testRunId -ManifestPath $manifestPath `
+            -ConfigurationPath $configuration -Mode Apply } 'Test cycle failed'
+        Equal @($global:labCycleTrace) @('Inventory', 'Reset', 'Bootstrap', 'Issues', 'execute', 'teardown')
+        $saved = Read-LabManifest $m.testRunId $manifestPath
+        Equal $saved.delivery.exitCode 7
+        Equal $saved.delivery.runId 'new-run'
+        Equal $saved.delivery.stopped $true
+        $receipt = Get-Content -LiteralPath (Join-Path $m.evidenceRoot 'lifecycle-receipt.json') -Raw | ConvertFrom-Json
+        Equal $receipt.execution 'failed'
+        Equal $receipt.teardown 'passed'
+        Reject { & $runner -TestRunId $m.testRunId -ManifestPath $manifestPath -Mode Apply } 'not a fresh test'
+        Equal @($global:labCycleTrace).Count 6
+    } finally {
+        foreach ($name in @('az', 'node', 'copilot')) { Remove-Item -LiteralPath "Function:\global:$name" }
+        Remove-Variable -Name labCycleFixture, labCycleTrace -Scope Global
+        Import-Module (Join-Path $PSScriptRoot 'LabDeliveryTest.psm1') -Force -DisableNameChecking
+        Remove-Item -LiteralPath $temporary -Recurse -Force
     }
 }
 Write-Output "$script:passed offline harness checks passed; no external commands or mutations executed."

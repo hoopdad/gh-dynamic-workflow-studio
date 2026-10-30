@@ -75,6 +75,50 @@ function Write-LabJson {
     }
 }
 
+function Invoke-LabLifecycle {
+    param(
+        [string]$TestRunId,
+        [scriptblock]$Setup,
+        [scriptblock]$Execute,
+        [scriptblock]$Teardown,
+        [string]$ReceiptPath
+    )
+    $receipt = @{
+        schemaVersion = 1; testRunId = $TestRunId
+        startedAt = [DateTime]::UtcNow.ToString('o')
+        setup = 'not started'; execution = 'not started'; teardown = 'not started'
+        status = 'failed'; errors = @()
+    }
+    $stage = 'setup'
+    try {
+        $receipt.setup = 'running'
+        & $Setup | Out-Null
+        $receipt.setup = 'passed'
+        $stage = 'execution'
+        $receipt.execution = 'running'
+        & $Execute | Out-Null
+        $receipt.execution = 'passed'
+    } catch {
+        $receipt[$stage] = 'failed'
+        $receipt.errors += @{ stage = $stage; message = $_.Exception.Message }
+    } finally {
+        $receipt.teardown = 'running'
+        try {
+            & $Teardown | Out-Null
+            $receipt.teardown = 'passed'
+        } catch {
+            $receipt.teardown = 'failed'
+            $receipt.errors += @{ stage = 'teardown'; message = $_.Exception.Message }
+        }
+        if ($receipt.setup -ceq 'passed' -and $receipt.execution -ceq 'passed' -and $receipt.teardown -ceq 'passed') {
+            $receipt.status = 'passed'
+        }
+        $receipt.completedAt = [DateTime]::UtcNow.ToString('o')
+        Write-LabJson $ReceiptPath $receipt
+    }
+    return $receipt
+}
+
 function ConvertTo-LabCanonicalValue {
     param($Value)
     if ($Value -is [Collections.IDictionary]) {

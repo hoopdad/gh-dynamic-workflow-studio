@@ -89,6 +89,9 @@ journaled validated plans retain canonical requirements for ID-only repairs.
 Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
 `test-harness/Setup-LabDeliveryTest.ps1` and `Teardown-LabDeliveryTest.ps1`
 share explicit run/private-manifest identity and exact inventories.
+`Invoke-LabDeliveryTest.ps1` provides the outer fresh setup -> execute -> teardown
+cycle; cleanup is attempted in `finally` and each stage retains its own verdict.
+It never resumes an earlier delivery or overrides native permissions.
 Setup separates inventory/reset/bootstrap/three-parent creation; no app build
 or automatic workflow launch. Explicit read-only `Preflight` reports deployment
 dependencies without gating delivery or independently safe repository setup.
@@ -118,3 +121,8 @@ Git worktree-path normalization and the retained ownership/closure gates.
 deployment ownership and optional harness environment diagnostics. No new agent,
 readiness phase or schema; existing repair, authorization and acceptance gates
 remain in place. No paths added/deleted.
+
+2026-10-30: reviewed from `9fd51bb` for the outer clean lifecycle runner.
+Added `test-harness/Invoke-LabDeliveryTest.ps1`; existing setup/teardown scope
+guards and the two-module workflow payload are unchanged. Twenty-one offline
+harness checks include success and setup/execution/cleanup failure ordering.
