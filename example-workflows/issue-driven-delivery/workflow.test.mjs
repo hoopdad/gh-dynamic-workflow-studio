@@ -549,10 +549,31 @@ test("invalid inputs, closed parents and stale local evidence cannot launch a de
     assert.ok(!stale.calls.includes("1:deploy-1:DevOps"));
 });
 
-test("DevOps retries smoke/deploy failure, files blocked deployment issues and never skips local tests on changed code", async () => {
-    const retry = fixture((label) => label === "1:deploy-1:DevOps"
-        ? makeReport({ status: "rework", findings: [finding] }) : undefined);
+test("DevOps owns provisioning through deployment retries, blocks for intervention and retests changed code", async () => {
+    const plan = makePlan();
+    const infrastructure = plan.assignments.find((assignment) => assignment.role === "Infrastructure");
+    infrastructure.files = [];
+    infrastructure.task = "No distinct work beyond DevOps-owned provisioning";
+    const devops = plan.assignments.find((assignment) => assignment.role === "DevOps");
+    devops.files = ["delivery/main.tf", "delivery/deploy.mjs"];
+    const retry = fixture((label, prompt) => {
+        if (label === "1:design:Architect") {
+            assert.match(prompt, /provisioning\/IaC files exclusively to DevOps/);
+            return plan;
+        }
+        if (label === "1:develop:DevOps" || label.includes(":deploy-")) {
+            assert.ok(prompt.includes(JSON.stringify(devops)));
+            if (label === "1:develop:DevOps") {
+                assert.match(prompt, /DO NOT provision or deploy during this phase/);
+            } else {
+                assert.match(prompt, /Investigate and resolve Terraform or other provisioning\/deployment failures within your owned files and existing\s+authorization/);
+            }
+        }
+        return label === "1:deploy-1:DevOps"
+            ? makeReport({ status: "rework", findings: [{ ...finding, owner: "DevOps" }] }) : undefined;
+    });
     assert.equal((await retry.run()).status, "done");
+    assert.ok(!retry.calls.includes("1:develop:Infrastructure"));
     assert.ok(retry.calls.includes("1:deploy-2:DevOps"));
     const blocked = fixture((label) => label === "1:deploy-1:DevOps" ? makeReport({
         status: "blocked", findings: [{ ...finding, requirementId: "DELIVERY", owner: "DevOps" }],

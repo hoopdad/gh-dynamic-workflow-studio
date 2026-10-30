@@ -1,7 +1,9 @@
 # Private Note Assistant integration harness
 
-PowerShell 7.2+, Node 24+, Git, authenticated `gh`, isolated lab Azure CLI and
-a responsive Linux Docker daemon are required. No package installation is needed.
+PowerShell 7.2+, Node 24+ and Git are harness tooling requirements. Operations
+using GitHub or Azure require authenticated `gh` or isolated lab Azure CLI access,
+respectively. Docker and other delivery prerequisites are workflow-owned project
+requirements, not supervisor launch prerequisites. No package installation is needed.
 This harness never builds the application or invokes a model/workflow.
 
 Run the offline checks **before** reset or delivery:
@@ -52,16 +54,21 @@ not inferred from ambient Azure defaults):
 }
 ```
 
-`sharedDependencies` needs exactly one owner-verified existing West US 3 resource
-for each role: `foundryAccount`, `foundryProject`, `modelDeployment`, `vnet`,
+The optional environmental diagnostic expects exactly one owner-verified existing
+West US 3 resource in `sharedDependencies` for each role:
+`foundryAccount`, `foundryProject`, `modelDeployment`, `vnet`,
 `appInsights`, `logAnalytics`, `keyVault`, `storage`. An optional `registry` is
 also reusable. Each entry has `role`, exact ARM `id`, `type`, `apiVersion`,
 `ownerSource` (source path/revision), and `intendedUse`. A missing `id` is allowed
-for inventory and ownership-reconciled repository setup, but blocks delivery
-preflight. Repository reset never depends on model/telemetry availability; its
-old ownership, state, process and diagnostic gates remain mandatory. Verify current
-provisioning, endpoint, permissions, model suitability and subnet delegations
-independently; a selected resource ID alone proves none of these.
+for inventory and ownership-reconciled repository setup; report it as an unmet
+diagnostic condition, not a launch gate or a pass. Existing-service reuse remains
+a product requirement for workflow agents to resolve, not permission to create
+unapproved monitoring/vault resources or recreate shared services.
+Repository reset never depends on model/telemetry availability; its
+old ownership, state, process and diagnostic gates remain mandatory. Workflow
+agents must independently verify current provisioning, endpoint, permissions,
+model suitability and subnet delegations; a selected resource ID alone proves
+none of these.
 
 Use the existing authorized GitHub identity in a process scoped to this repository;
 never print tokens or silently change the desktop's default identity. Azure reads
@@ -101,7 +108,6 @@ silently close/merge/restack them.
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Reset -Mode Apply
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Bootstrap -Mode Apply
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Issues -Mode Apply
-& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Preflight
 ```
 
 Inventory includes ignored diagnostic leaves, not only tracked/untracked files;
@@ -118,11 +124,39 @@ It commits/pushes the queue normally; it does not launch delivery.
 Partial failures are retained, never silently retried. Re-inspect before rerunning;
 identity/HEAD drift requires explicit reconciliation, not an automatic reset.
 
-Preflight must pass before delivery. In a Copilot session scoped to the target,
-verify workflow registration and both
-installed file hashes. Confirm actual Docker builds/registry transport, private
-connectivity and durable attempt accounting before invoking **one** workflow using
-the current supported CLI interface:
+### Optional read-only environmental diagnostic
+
+`Preflight` is an optional read-only diagnostic, **not a delivery launch gate**:
+
+```powershell
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Preflight
+```
+
+Keep its actual findings/errors (or explicitly record that it was not run);
+never hide unresolved findings or relabel them as a pass. Present sanitized
+findings to workflow agents through the existing project inputs/instructions and
+requirements, alongside `.github\deployment-target.json` and the parent issue
+context; private receipts alone are not a handoff. Do not rewrite immutable
+issued requirements.
+
+The supervisor fixes workflow registration only. Infrastructure, environment and
+operator prerequisites—including existing West US 3 monitoring/vault discovery,
+VNet readiness, Docker/registry transport and Bastion/strict SSH connectivity—are
+the workflow's responsibility under project-declared requirements and normal
+authorization. Agents must validate and address them within the original reuse
+scope or report a truthful blocker, not assume readiness. This creates no new
+generic preflight agent/phase and authorizes no supervisor application implementation.
+
+### Mandatory safety and launch controls
+
+Optional diagnostics do not waive safe-reset ownership/state/process/evidence
+gates, installation/source guards or authorization. In a Copilot session scoped
+to the target, verify workflow registration and both installed file hashes against
+the pinned committed source. Confirm no other delivery is active and preserve
+the aggregate model-attempt ceiling/accounting requirements in the project inputs.
+The workflow must implement durable reservation before its first inference, not
+before workflow launch. Invoke **one** workflow using the current supported CLI
+interface:
 
 ```powershell
 Set-Location C:\work\lab-greeting-agent

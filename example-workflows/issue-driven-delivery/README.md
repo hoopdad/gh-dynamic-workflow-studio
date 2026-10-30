@@ -23,6 +23,9 @@ not recommendations. Creating these files does not install or run the workflow.
    contract and dependency. Each file has exactly one owner, including manifests,
    lockfiles, generated files, test fixtures and delivery scripts. The design
    document belongs to Architect. Missing tiers get explicit no-work assignments.
+   Required provisioning/IaC files belong exclusively to DevOps, including
+   Terraform where required. Infrastructure gets only distinct non-provisioning
+   work and remains inactive if none exists.
    Architect also decides whether the issue needs a **UI/UX Designer**, with an
    explicit reason for selecting or skipping it.
 4. Web, API, Infrastructure, Agent, Test and DevOps run concurrently in separate
@@ -41,15 +44,21 @@ not recommendations. Creating these files does not install or run the workflow.
      and concurrency limit are unchanged.
    - Test writes requirement-traceable local tests, local/deployed E2E and
      post-deployment smoke tests.
-   - DevOps writes scan, lint, formatting-check, CI/deploy/rollback orchestration
-     using the project's existing GitHub Actions or local tooling preference.
+   - DevOps writes the project's required provisioning/deployment implementation
+     (including Terraform where required) and scan, lint, formatting-check,
+     CI/deploy/rollback tooling using the project's existing tooling preference.
+     No provisioning or deployment runs during this development phase.
 5. After the parallel barrier, Test executes all local tests. Demonstrated
    requirement failures and runtime errors on required flows become repair issues
    identifying the requirement, tier owner, expected/actual behavior and evidence.
-6. DevOps runs static scans/lint/format checks, deploys the tested revision,
-   waits for CI/deployment completion, and runs Test's smoke tests. Deployment
-   retries are bounded. Any committed fix goes back through design/local tests.
-   A blocked deployment creates an operational issue for later Architect pickup.
+6. DevOps runs static scans/lint/format checks, the project's provisioning/deployment
+   plan or equivalent preview where supported, then required provisioning and
+   deployment of the tested revision. It waits for CI/deployment completion and
+   runs Test's smoke tests. DevOps investigates and resolves Terraform or other
+   deployment failures within owned files and existing authorization; retries
+   are bounded. Any committed fix goes back through design/local tests.
+   Genuine user intervention or scope/authorization decisions become evidenced
+   operational blockers with required user action, not new application requirements.
 7. Test independently runs requirement-based E2E against the deployed target.
    Failures become scoped repair issues, not invented acceptance criteria.
 8. Architect replans outstanding work and repeats steps 2-7. When application
@@ -231,7 +240,11 @@ copilot workflow run issue-driven-delivery --args "@delivery-input.json"
 
 `deploymentTarget` must name an actual, authorized environment with enough
 project configuration to resolve its endpoint and deployment command. It is not
-a magic environment provisioner. No production authorization is implied.
+itself a provisioner or authorization for new resources. DevOps writes and runs
+only the provisioning/deployment required by explicit project/issue requirements
+and dependency constraints, within existing authorization. There is no universal
+Docker, registry, Bastion/SSH, Azure or Terraform prerequisite.
+No production authorization is implied.
 
 | Input | Default | Meaning |
 | --- | --- | --- |

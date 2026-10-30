@@ -393,7 +393,9 @@ DELIVERY may identify an evidenced operational blocker (permissions, CI, deploym
 Do not open or close repair issues yourself: return findings; the workflow publishes/reconciles them.
 Never close the parent issue or merge the PR. No force pushes, destructive resets or bypassed checks.
 Do not expose secrets, weaken protections, spend/deploy outside existing approval, or claim unrun checks passed.
-Report exact commands, exit codes, logs/URLs and commit SHA in evidence. Missing prerequisites are blocked.`;
+Derive delivery prerequisites from explicit project/issue requirements and dependency constraints, not assumed technologies.
+Report exact commands, exit codes, logs/URLs and commit SHA in evidence. Unmet prerequisites remain blockers
+until resolved within owned files and existing authorization.`;
 
 const writerRules = `Use ONLY your assigned isolated git worktree, never the main checkout or another agent's
 worktree/index. Create it from the supplied remote candidate; on replay, inspect/reuse only your own work.
@@ -531,6 +533,8 @@ Identify every affected tier, folder and exact existing/new file, contracts, dep
 test commands and deploy/rollback commands. Quote explicit parent requirements verbatim with stable IDs.
 Assign disjoint exact file sets to ALL six roles, including shared contracts, manifests, lockfiles, generated
 files, test fixtures and delivery scripts. You own only the design document. No other overlapping writers.
+Assign required provisioning/IaC files exclusively to DevOps, including Terraform where required.
+Infrastructure owns only distinct non-provisioning work; use files:[] with a reason if none exists.
 Decide per issue whether UI/UX design is needed before Web implementation. Return uiUx with enabled and
 an explicit reason, even when skipping. If enabled, assign the UI/UX Designer a narrow task, existing
 requirement IDs and disjoint exact design artifact paths (not implementation files). Web must be active.
@@ -541,8 +545,10 @@ If skipped, return task:"", files:[] and requirementIds:[]; explain why in reaso
 Keep interfaces fixed during this round; communicate changes via the design, not peer file edits.
 Omit implementation of unaffected tiers with files:[] and explain why. Test and DevOps remain active.
 Test owns local/unit/integration tests, local E2E, deployed E2E and post-deploy smoke tests.
-DevOps owns scan/lint/format checks and deployment orchestration, honoring the project's preference for
-GitHub Actions OR local scripts/tools. Do not introduce a competing delivery stack.
+DevOps writes the project's required provisioning/deployment implementation and owns scan/lint/format checks,
+CI/deploy/rollback tooling, honoring the project's preference for GitHub Actions OR local scripts/tools.
+Derive prerequisites from explicit project/issue requirements and dependency constraints.
+Do not introduce a competing delivery stack or assume a universal set of deployment technologies.
 Provide each role a narrow assignment and requirement IDs. If scope is ambiguous, return blocked.
 Return the published design commit SHA and document path.`;
         const handoff = requirements
@@ -618,7 +624,8 @@ Read the open scoped repair issues for your role as well; implement their requir
 Implement independently. Stay within these exact owned files, including any new files.
 If another file is needed, return an evidenced blocker for Architect replanning rather than editing it.
 Test: write requirement-traceable tests and runnable local/E2E/smoke commands, but do not evaluate incomplete peer work.
-DevOps: write scan/lint/format-check, CI/deploy/rollback orchestration; DO NOT deploy during this phase.
+DevOps: write the project's required provisioning/deployment implementation (including Terraform where required)
+and scan/lint/format-check, CI/deploy/rollback tooling. DO NOT provision or deploy during this phase.
 Return only after your own commit is pushed (or you are blocked). Findings must cite requirements;
 an operational blocker uses DELIVERY. Pass evidence includes your commit and successful push.`);
             validateReport(report, plan);
@@ -651,17 +658,22 @@ required to execute them. Missing/unrun tests are not passes. Return requirement
         let deployed = false;
         for (let attempt = 1; attempt <= maxDeploymentAttempts; attempt++) {
             const deployment = validateReport(await agent("DevOps", `${round}:deploy-${attempt}`, `${candidate()}
-If a deployment script needs repair, stop read-only evaluation and use a separate writer worktree:
+If provisioning/deployment implementation needs repair, stop read-only evaluation and use a separate writer worktree:
 ${path.join(worktreeRoot, `devops-deploy-${round}-${attempt}`)}. ${writerRules}
 Your only writable assignment: ${JSON.stringify(plan.assignments.find((assignment) => assignment.role === "DevOps"))}.
 Never change or weaken Test-owned smoke tests to obtain a pass.
 Run configured static code scans, lint and formatting CHECKS. Any failure blocks deployment; never waive it.
 Use the project's existing GitHub Actions or local scripts/tools, and existing approval policies.
+Run its provisioning/deployment plan or equivalent preview where supported, then its required
+provisioning/deployment implementation, including Terraform where required, within existing authorization.
 Deploy EXACTLY this candidate to ${deploymentTarget}; do not deploy an unrelated default-branch revision.
 If CI requires a PR first, cannot deploy this branch, or lacks approval, report DELIVERY blocked; do not bypass it.
 Wait for remote CI/deployment completion. Run Test-owned post-deploy smoke tests against the actual target.
 Evidence must identify target URL/environment, deployed SHA, CI run IDs/results and smoke commands/results.
-Investigate and retry deployment failures within your owned files; never alter app requirements or peer files.
+Investigate and resolve Terraform or other provisioning/deployment failures within your owned files and existing
+authorization, retrying within the attempt budget. A tool failure alone does not require user intervention.
+If genuine user intervention or a scope/authorization decision is needed, return an evidenced DELIVERY blocker
+with attempted fixes and the required user action/decision. Never alter app requirements or peer files.
 Any code/script change must be committed/pushed to the same branch and sent back through local tests.
 Pass means deployment AND smoke passed; rework means a retryable failure, blocked means it needs intervention.`), plan);
             await reconcile("deployment", deployment);

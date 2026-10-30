@@ -25,6 +25,9 @@
   registers the SDK workflow; `workflow.mjs` owns orchestration, GitHub adapter,
   structural ownership/requirement guards and role prompts. Its README covers
   the AI installation contract, concurrent same-branch writers and critique.
+  Architect assigns project-required provisioning/deployment implementation to
+  DevOps exclusively, including Terraform when required. Technologies and
+  prerequisites come from project requirements, not universal workflow gates.
   Architect explicitly selects/skips UI/UX Designer per issue. When enabled,
   its disjoint, published design artifacts gate the six-writer fan-out and are
   authoritative for Web within issue scope, architecture contracts and policy.
@@ -87,9 +90,10 @@ Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
 `test-harness/Setup-LabDeliveryTest.ps1` and `Teardown-LabDeliveryTest.ps1`
 share explicit run/private-manifest identity and exact inventories.
 Setup separates inventory/reset/bootstrap/three-parent creation; no app build
-or automatic workflow launch. Explicit read-only `Preflight` gates delivery
-dependencies without coupling them to independently safe repository setup.
+or automatic workflow launch. Explicit read-only `Preflight` reports deployment
+dependencies without gating delivery or independently safe repository setup.
 Old ownership/process/state gates still apply to reset.
+Environmental prerequisites belong to the workflow, not the supervisor.
 Teardown requires a workflow-delivered pinned
 owner procedure and exact mutation/readback inventory, preserves shared roots
 and fails closed on unknown ownership/closure. `LabDeliveryTest.psm1` owns
@@ -109,3 +113,8 @@ alongside the two example suites; root Studio test/check commands are unchanged.
 inventory and state-bearing reset refusal. No paths added/deleted; the runtime
 payload is unchanged. Sixteen offline harness checks cover stage isolation,
 Git worktree-path normalization and the retained ownership/closure gates.
+
+2026-10-30: reviewed from `fb15892` for project-neutral DevOps provisioning/
+deployment ownership and optional harness environment diagnostics. No new agent,
+readiness phase or schema; existing repair, authorization and acceptance gates
+remain in place. No paths added/deleted.
