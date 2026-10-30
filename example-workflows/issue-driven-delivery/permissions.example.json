@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "initial-inspection",
+  "purpose": "Propose initial repository and issue inspection. This does not authorize a complete Architect stage or application delivery.",
+  "tools": [
+    { "pattern": "shell(git status)", "reason": "Inspect checkout state before planning." },
+    { "pattern": "shell(git diff)", "reason": "Inspect existing changes without assuming a clean checkout." },
+    { "pattern": "shell(git log)", "reason": "Inspect relevant commit history." },
+    { "pattern": "shell(git rev-parse)", "reason": "Identify the checkout and candidate revision." },
+    { "pattern": "shell(git ls-files)", "reason": "Enumerate tracked application files." },
+    { "pattern": "shell(gh repo view)", "reason": "Inspect the target repository identity." },
+    { "pattern": "shell(gh issue list)", "reason": "Inspect the approved issue queue." },
+    { "pattern": "shell(gh issue view)", "reason": "Read the selected issue and its acceptance criteria." }
+  ],
+  "directories": [
+    { "root": "worktrees", "path": ".", "reason": "Request access to the explicitly supplied application worktree scope." },
+    { "root": "evidence", "path": ".", "reason": "Request access to the explicitly supplied current-run evidence directory." }
+  ],
+  "writes": [],
+  "urls": [
+    { "origin": "https://github.com", "reason": "Inspect the approved GitHub repository." },
+    { "origin": "https://api.github.com", "reason": "Read issue and repository metadata through gh." }
+  ]
+}

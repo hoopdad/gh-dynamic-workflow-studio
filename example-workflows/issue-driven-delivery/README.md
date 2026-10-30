@@ -273,6 +273,9 @@ empty, a feature blocks, or the runtime stops the run.
   GitHub, build/test and deployment operations actually needed. Non-interactive
   `copilot workflow run` cannot display permission prompts; configure grants
   before running, or start interactively. Do not grant unrestricted tooling.
+  See [Building a bounded permission proposal](PERMISSIONS.md) for a reusable
+  inspection starter, proposal-only validator and Copilot-assisted authoring
+  instructions. These tools do not apply approvals or verify native inheritance.
 - The trusted extension itself invokes checkout-preserving Git fetch/show/ancestry checks
   and `gh` issue/label/review and native stack REST operations directly. These subprocesses are not
   agent permission prompts. Review the extension before trusting/loading it.
@@ -377,10 +380,11 @@ application, invokes a model, or launches delivery automatically.
 From this example folder (no root package or npm installation required):
 
 ```text
-node --test workflow.test.mjs install.test.mjs
+node --test workflow.test.mjs install.test.mjs review-permissions.test.mjs
 node --check extension.mjs
 node --check workflow.mjs
 node --check install.mjs
+node --check review-permissions.mjs
 ```
 
 Workflow tests use fake agents and GitHub responses: they check orchestration, disjoint
@@ -394,4 +398,6 @@ plus native stack create/append/readback, idempotency, membership drift and
 API failure handling.
 Installer tests create disposable local Git repositories, verify portability and exact
 payload, preserve modified installations, and reject unsafe/ambiguous targets.
+Permission-preview tests cover explicit argument data, rejected broad/unsafe
+requests, link/traversal guards and absence of settings or delivery side effects.
 Tests do **not** create GitHub issues/branches/PRs, request a real review, or deploy.

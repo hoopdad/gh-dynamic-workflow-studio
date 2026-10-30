@@ -11,10 +11,11 @@ own application implementation.
 Run the offline checks **before** reset or delivery:
 
 ```powershell
-node --test example-workflows\issue-driven-delivery\workflow.test.mjs example-workflows\issue-driven-delivery\install.test.mjs example-workflows\issue-driven-delivery\test-harness\harness.test.mjs
+node --test example-workflows\issue-driven-delivery\workflow.test.mjs example-workflows\issue-driven-delivery\install.test.mjs example-workflows\issue-driven-delivery\review-permissions.test.mjs example-workflows\issue-driven-delivery\test-harness\harness.test.mjs
 node --check example-workflows\issue-driven-delivery\extension.mjs
 node --check example-workflows\issue-driven-delivery\workflow.mjs
 node --check example-workflows\issue-driven-delivery\install.mjs
+node --check example-workflows\issue-driven-delivery\review-permissions.mjs
 node --check example-workflows\issue-driven-delivery\test-harness\observe-runs.mjs
 ```
 

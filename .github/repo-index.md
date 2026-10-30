@@ -41,7 +41,13 @@
   Its dependency-free `install.mjs` requires an explicit target Git root and
   copies only the two runtime modules; it never runs the workflow or changes
   GitHub. All example tests live alongside it (`workflow.test.mjs`,
-  `install.test.mjs`); they are not part of Studio's root test/check commands.
+  `install.test.mjs`, `review-permissions.test.mjs`); they are not part of
+  Studio's root test/check commands.
+  `PERMISSIONS.md`, `permissions.example.json` and `review-permissions.mjs`
+  provide Copilot-assisted authoring and a dependency-free proposal-only preview
+  of explicit tool/path/URL requests. They never apply approvals, change native
+  settings or launch delivery; trusted extension subprocesses remain a separate
+  boundary. They are not added to the installer payload.
 
 ## Navigation and checks
 
@@ -133,3 +139,11 @@ than force-reloading it and invalidating later callback helper bindings.
 Twenty-three offline checks now include fresh-process runs of the real stage
 scripts for success and execution-failure cleanup. No paths added/deleted;
 workflow runtime, native permissions and ownership/cleanup guards are unchanged.
+
+2026-10-30: reviewed from `6ac9593` for bounded permission proposal authoring.
+Added `issue-driven-delivery/PERMISSIONS.md`, `permissions.example.json`,
+`review-permissions.mjs` and its colocated test. The inspection starter omits
+write/push/deploy/cleanup requests; the helper emits argument data only and
+rejects broad patterns, overlapping roots, linked/traversing paths and unsafe
+origins. Workflow-agent inheritance is not claimed verified. No runtime,
+installation, harness-launch or native permission configuration changed.
