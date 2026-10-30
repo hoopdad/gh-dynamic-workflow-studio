@@ -198,4 +198,11 @@ Check 'Model deployments inherit only the freshly verified selected account regi
     } $m
     Equal @($result.status) @('ready', 'ready')
 }
+Check 'Shared-baseline comparison ignores dictionary serialization order but detects actual configuration changes' {
+    $before = @(@{ id = 'shared'; configuration = [ordered]@{ tags = @{ owner = 'lab' }; publicNetworkAccess = 'Disabled' } })
+    $after = @([ordered]@{ configuration = [ordered]@{ publicNetworkAccess = 'Disabled'; tags = [ordered]@{ owner = 'lab' } }; id = 'shared' })
+    Equal (ConvertTo-LabCanonicalJson $before) (ConvertTo-LabCanonicalJson $after)
+    $after[0].configuration.publicNetworkAccess = 'Enabled'
+    if ((ConvertTo-LabCanonicalJson $before) -ceq (ConvertTo-LabCanonicalJson $after)) { throw 'Shared drift was hidden' }
+}
 Write-Output "$script:passed offline harness checks passed; no external commands or mutations executed."

@@ -75,6 +75,24 @@ function Write-LabJson {
     }
 }
 
+function ConvertTo-LabCanonicalValue {
+    param($Value)
+    if ($Value -is [Collections.IDictionary]) {
+        $result = [ordered]@{}
+        foreach ($key in @($Value.Keys | Sort-Object -CaseSensitive)) { $result[$key] = ConvertTo-LabCanonicalValue $Value[$key] }
+        return $result
+    }
+    if ($Value -is [Collections.IEnumerable] -and $Value -isnot [string]) {
+        return ,@($Value | ForEach-Object { ,(ConvertTo-LabCanonicalValue $_) })
+    }
+    return $Value
+}
+
+function ConvertTo-LabCanonicalJson {
+    param($Value)
+    return ConvertTo-Json -InputObject (ConvertTo-LabCanonicalValue $Value) -Depth 50 -Compress
+}
+
 function Assert-LabRepository {
     param([Collections.IDictionary]$Manifest)
     $root = $Manifest.repositoryRoot
@@ -191,14 +209,16 @@ function Assert-LabPrerequisites {
 }
 
 function Assert-LabQuiescent {
-    param([Collections.IDictionary]$Manifest)
+    param([Collections.IDictionary]$Manifest, [switch]$CurrentRunOnly)
     $observer = Join-Path $PSScriptRoot 'observe-runs.mjs'
     $observed = Invoke-LabCommand node @($observer, $Manifest.sourceRoot, $Manifest.repositoryRoot) |
         ConvertFrom-Json -AsHashtable
     if ($observed.warnings.Count -or @($observed.runs | Where-Object { $_.status -notin @('completed', 'error', 'halted', 'cancelled') }).Count) {
         throw 'Active or unobservable workflow; stop through its owning Copilot session before cleanup'
     }
-    if (-not $Manifest.previous.processClosureVerified) { throw 'Old owned process/listener closure has not been independently recorded' }
+    if (-not $CurrentRunOnly -and -not $Manifest.previous.processClosureVerified) {
+        throw 'Old owned process/listener closure has not been independently recorded'
+    }
     return $observed
 }
 

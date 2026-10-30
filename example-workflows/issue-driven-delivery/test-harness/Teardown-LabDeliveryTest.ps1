@@ -19,7 +19,7 @@ try {
         $lock = [IO.File]::Open("$ManifestPath.lock", 'OpenOrCreate', 'ReadWrite', 'None')
     }
     Assert-LabRepository $manifest
-    [void](Assert-LabQuiescent $manifest)
+    [void](Assert-LabQuiescent $manifest -CurrentRunOnly)
     if (-not $manifest.delivery.stopped) { throw 'Stop delivery through its owning runtime before teardown' }
     Set-LabAzureScope $manifest
     $baseline = Get-Content -LiteralPath $manifest.inventoryPath -Raw | ConvertFrom-Json -AsHashtable
@@ -66,8 +66,8 @@ try {
         $receipt.closure = 'proven closed; no new run-owned processes or mutations started'
     }
     $current = @(Get-LabSharedBaseline $manifest)
-    $before = $baseline.shared | ConvertTo-Json -Depth 40 -Compress
-    $after = $current | ConvertTo-Json -Depth 40 -Compress
+    $before = ConvertTo-LabCanonicalJson $baseline.shared
+    $after = ConvertTo-LabCanonicalJson $current
     if ($before -cne $after) { throw 'Shared configuration changed; preserve evidence and reconcile through its original owner' }
     $receipt.sharedComparison = 'unchanged selected nonsecret configuration; telemetry content not compared or purged'
     $receipt.status = $(if ($Mode -eq 'Apply' -and -not $WhatIfPreference) { 'verified' } else { 'inspection only' })
