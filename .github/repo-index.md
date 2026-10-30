@@ -164,3 +164,36 @@ cmdlets and Unix inspection utilities; whole interpreters and arbitrary leaf
 programs remain rejected. Colocated tests cover accepted leaves and mixed-purpose
 or interpreter rejection. No paths added/deleted, runtime/installer changes or
 active launcher permission changes; the expanded project proposal stays private.
+
+2026-10-30: reviewed from `d45ed06` for explicit execution proposals.
+The preview accepts JSON converters, a fixed list of named file-operation commands and `pytest`
+only when requested; these are not inspection grants and do not enter the starter.
+Tests distinguish shell file operations from exact editor writes and retain
+whole-client/interpreter rejection. No paths added/deleted, runtime, installer,
+active launcher or native permission changes. The expanded delivery proposal
+remains private and unapplied pending operator review.
+
+2026-10-30: reviewed from `d45ed06` plus the pending execution-proposal edits
+for an explicitly approved existing transport launcher. The helper verifies an
+exact absolute `.ps1` path and reviewed SHA256 without executing it or adding
+directory/interpreter access. Tests cover changed/missing/linked/unsupported
+scripts. Documentation distinguishes native URL approval from network/RBAC
+enforcement and records externally managed RBAC prerequisites with actionable
+failure reports, not self-grant/remediation scripts. No paths added/deleted,
+workflow/runtime/launcher changes or applied permissions.
+
+2026-10-30: reviewed from `d45ed06` plus pending permission-proposal changes for
+final human review. Added `issue-driven-delivery/permissions.delivery-git.proposed.json`,
+an unapplied lab-specific draft, separate from the unchanged inspection starter
+and two-module installer payload. Optional `writes[].recursive` renders absolute
+directory editor selectors for the application subtree; evidence stays exact-file.
+This is not shell/container OS confinement and enables no sandbox/native settings.
+`githubIO.review` now paginates submitted review bodies and all PR inline comments/
+replies, preserving cross-review linkage, and hands untrusted data to Architect
+behind the existing current-SHA/bot gate. Missing/unreadable data fails closed.
+Report-stage `DELIVERY` interventions stop repair/intake and retain findings/evidence.
+Architect/DevOps prompts conditionally require an actual-deployment registration
+packet for an existing owner transport; no parallel tunnel, implicit owner-repo
+edits or external RBAC remediation. Runtime/tests, permission guide and README
+cover these boundaries; mocked real-stage harness checks cover recursive/exact
+child grants. No active launcher, target installation, lab or permission changes.

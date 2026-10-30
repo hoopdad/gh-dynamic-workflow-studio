@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -11,9 +12,13 @@ const inspectionCommands = new Set([
     "get-psprovider", "get-process", "get-service", "get-netadapter", "get-netipaddress", "get-netipconfiguration",
     "get-netroute", "get-nettcpconnection", "get-netudpendpoint", "get-dnsclient", "get-dnsclientserveraddress",
     "resolve-dnsname", "test-path", "resolve-path", "select-string", "compare-object", "measure-object", "get-date",
-    "get-culture", "get-uiculture", "get-computerinfo",
+    "get-culture", "get-uiculture", "get-computerinfo", "convertto-json", "convertfrom-json",
     "ls", "pwd", "cat", "head", "tail", "grep", "wc", "cut", "tr", "stat", "readlink", "realpath", "basename", "dirname",
     "du", "df", "uname", "whoami", "id", "cmp", "diff", "comm", "sha256sum", "sha512sum", "cksum",
+]);
+const executionCommands = new Set([
+    "new-item", "set-content", "add-content", "copy-item", "move-item", "rename-item", "remove-item", "out-file",
+    "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
 ]);
 
 function object(value, keys, label) {
@@ -48,16 +53,31 @@ async function noLinks(file) {
     }
 }
 
-function tool(entry) {
-    object(entry, ["pattern", "reason"], "Tool request");
+async function tool(entry) {
+    object(entry, ["pattern", "reason", ...(Object.hasOwn(entry ?? {}, "sha256") ? ["sha256"] : [])], "Tool request");
     const pattern = text(entry.pattern, "Tool pattern");
     text(entry.reason, "Tool reason");
+    const script = /^shell\((.+)\)$/.exec(pattern)?.[1];
+    if (script && path.isAbsolute(script)) {
+        if (script.startsWith("\\\\") || script.startsWith("//")
+            || path.resolve(script) !== script || path.extname(script).toLowerCase() !== ".ps1"
+            || /[*?()[\]{}'"`;&|<>]/.test(script) || script.slice(path.parse(script).root.length).includes(":")
+            || typeof entry.sha256 !== "string" || !/^[a-fA-F0-9]{64}$/.test(entry.sha256)) {
+            throw new Error("Script requests require a literal absolute .ps1 path and its reviewed SHA256");
+        }
+        await noLinks(script);
+        if (!(await stat(script))?.isFile()) throw new Error("Script request must name an existing regular file");
+        const digest = createHash("sha256").update(await readFile(script)).digest("hex");
+        if (digest !== entry.sha256.toLowerCase()) throw new Error("Script request does not match the reviewed SHA256");
+        return pattern;
+    }
+    if (Object.hasOwn(entry, "sha256")) throw new Error("Script SHA256 requires an absolute .ps1 request");
     if (pattern.startsWith("shell(")) {
         const command = /^shell\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*(?: [a-zA-Z0-9_][a-zA-Z0-9_.-]*)*)\)$/.exec(pattern)?.[1];
         const executable = command?.split(" ")[0].toLowerCase().replace(/\.exe$/, "");
         if (!command || interpreters.has(executable) || /^python\d+(?:\.\d+)*$/.test(executable)
-            || (!command.includes(" ") && !inspectionCommands.has(command.toLowerCase()))) {
-            throw new Error("Shell requests require named subcommands or supported inspection commands, not wildcards, interpreters, flags or shell expressions");
+            || (!command.includes(" ") && !inspectionCommands.has(command.toLowerCase()) && !executionCommands.has(command.toLowerCase()))) {
+            throw new Error("Shell requests require named subcommands or supported named commands, not wildcards, interpreters, flags or shell expressions");
         }
     } else {
         const match = /^([a-zA-Z0-9_][a-zA-Z0-9_.-]*)\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*)\)$/.exec(pattern);
@@ -80,8 +100,8 @@ function origin(entry) {
     return url.origin;
 }
 
-async function requestedPath(entry, roots, directory) {
-    object(entry, ["root", "path", "reason"], "Path request");
+async function requestedPath(entry, roots, directory, write = false) {
+    object(entry, ["root", "path", "reason", ...(write && Object.hasOwn(entry ?? {}, "recursive") ? ["recursive"] : [])], "Path request");
     text(entry.reason, "Path reason");
     const relative = text(entry.path, "Relative path");
     if (!rootNames.includes(entry.root) || !Object.hasOwn(roots, entry.root)) throw new Error("Path request needs an explicit root binding");
@@ -134,10 +154,18 @@ export async function reviewPermissions(profile, bindings) {
             throw new Error("Root bindings must not overlap");
         }
     }
-    const tools = unique(profile.tools.map(tool), "tool");
+    const tools = unique(await Promise.all(profile.tools.map(tool)), "tool");
     const urls = unique(profile.urls.map(origin), "URL");
     const directories = unique(await Promise.all(profile.directories.map((entry) => requestedPath(entry, roots, true))), "directory");
-    const writes = unique(await Promise.all(profile.writes.map((entry) => requestedPath(entry, roots, false))), "write");
+    const writes = unique(await Promise.all(profile.writes.map(async (entry) => {
+        if (Object.hasOwn(entry ?? {}, "recursive") && typeof entry.recursive !== "boolean") {
+            throw new Error("Write recursive must be a boolean");
+        }
+        const recursive = entry?.recursive === true;
+        if (recursive && entry.root === "evidence") throw new Error("Evidence writes must name individual owned files, not recursive directories");
+        const resolved = await requestedPath(entry, roots, recursive, true);
+        return recursive ? `${resolved}${path.sep}` : resolved;
+    })), "write");
     if (writes.some((file) => !inside(roots.workspace, file) && !directories.some((directory) => inside(directory, file)))) {
         throw new Error("Writes outside the workspace also need an explicit containing directory request");
     }
@@ -153,7 +181,10 @@ export async function reviewPermissions(profile, bindings) {
         limitations: [
             "This preview does not grant permissions, change settings, execute commands or run a workflow.",
             "Shell rules match command families, not full arguments, scripts, branches, repositories or cloud resources.",
+            "Script hashes are checked during preview, not pinned by native approval at execution; path access remains separate.",
             "Directory access also trusts configuration there; file-write requests do not authorize shell redirection.",
+            "Recursive write proposals use an absolute directory with a trailing separator; they are not shell filesystem containment.",
+            "Strict shell containment requires separately reviewed native sandbox policy and host verification; it is not enabled here.",
             "Native checks, managed policies, deny rules and existing identity/RBAC limits still apply.",
             "Profile validation is not a sandbox or approval. Workflow-agent inheritance needs separate native verification.",
         ],

@@ -59,6 +59,12 @@ not recommendations. Creating these files does not install or run the workflow.
    are bounded. Any committed fix goes back through design/local tests.
    Genuine user intervention or scope/authorization decisions become evidenced
    operational blockers with required user action, not new application requirements.
+   Azure role assignments/definitions remain external operator prerequisites;
+   failed access is not permission to self-grant through CLI or IaC. For targets
+   requiring an approved owner-managed private transport, DevOps prepares an
+   application-side registration packet from actual deployed ARM/host metadata.
+   Unsupported owner selections block with the required registration handoff,
+   not a second tunnel or implicit edits to the owner's repository.
 7. Test independently runs requirement-based E2E against the deployed target.
    Failures become scoped repair issues, not invented acceptance criteria.
 8. Architect replans outstanding work and repeats steps 2-7. When application
@@ -67,7 +73,11 @@ not recommendations. Creating these files does not install or run the workflow.
    PR), registers/extends its **native GitHub stack** once two PRs exist,
    publishes its stack position and dependency order, then requests GitHub
    Copilot review and waits for a **submitted review of the
-   exact tested SHA**. Architect reads and dispositions all comments; actionable
+   exact tested SHA**. The trusted read-only GitHub adapter paginates review bodies
+   and all inline comments/replies and supplies them to Architect as untrusted
+   evidence, without agent `gh api` grants. Architect dispositions every review/
+   comment ID, considering older-SHA context; inaccessible or incomplete data
+   cannot pass. Actionable
    findings return through the same design/build/test/deploy loop.
 9. When local tests, deployment/smoke, deployed E2E and assessed Copilot review
    pass at an unchanged candidate with no scoped repair issues, mark this
@@ -275,7 +285,10 @@ empty, a feature blocks, or the runtime stops the run.
   before running, or start interactively. Do not grant unrestricted tooling.
   See [Building a bounded permission proposal](PERMISSIONS.md) for a reusable
   inspection starter, proposal-only validator and Copilot-assisted authoring
-  instructions. These tools do not apply approvals or verify native inheritance.
+  instructions, plus a lab-specific `permissions.delivery-git.proposed.json`
+  for final review. It is not selected or applied automatically. Recursive
+  application-tree editor grants do not enforce shell filesystem containment.
+  These tools do not apply approvals or verify native inheritance.
 - The trusted extension itself invokes checkout-preserving Git fetch/show/ancestry checks
   and `gh` issue/label/review and native stack REST operations directly. These subprocesses are not
   agent permission prompts. Review the extension before trusting/loading it.
@@ -302,6 +315,10 @@ empty, a feature blocks, or the runtime stops the run.
   issues describe operational blockers, not new application requirements.
   Review/wait/budget issues can reach the review gate, but cannot remain open at
   final acceptance. Unrecognized open scoped issues block completion.
+  A reported `DELIVERY` intervention stops at any report stage rather than
+  entering the application repair loop. The result retains actionable findings
+  and evidence (operation, principal/scope, native error/request ID and operator
+  fix), alongside the scoped GitHub issue; no external notification is implied.
 - The result explicitly distinguishes `idle`, `blocked` and `done` and includes
   the ordered accepted `stack` plus `stackAfter` (its latest accepted PR number).
   `idle` means no eligible issue/no stack; `done` means the ready queue is empty.

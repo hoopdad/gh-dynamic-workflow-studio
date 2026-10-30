@@ -38,28 +38,72 @@ commands, two GitHub HTTPS origins, and directory access. It requests no file
 writes, commits, pushes, PR mutations, provisioning, deployment or cleanup.
 An unlisted operation must still prompt or remain blocked.
 
+## Delivery draft for final review
+
+`permissions.delivery-git.proposed.json` is the expanded, **unapplied lab-specific
+draft**, not a replacement for the inspection starter or an automatically
+installed profile. It includes inspection and execution proposals, recursive
+application-worktree editor writes, two named evidence outputs, selected HTTPS
+origins and the approved existing lab launcher with its reviewed hash.
+Its absolute owner-script path/hash are workstation-specific; other users must
+review and replace those against their own approved owner source. Merely keeping
+the draft here does not select it in any launcher, approve its requests or run it.
+
 ## Profile format and review boundaries
 
 Each request needs a reason. Unknown fields and duplicate requests fail.
 
 | Field | Requested native capability | Review requirement |
 | --- | --- | --- |
-| `tools` | `shell(program subcommand)`, a supported inspection command, or an exact `server(tool)` | Use recorded requests, not guessed catch-all rules. Common shell/interpreter commands, wildcards and whole-tool grants are rejected. |
+| `tools` | `shell(program subcommand)`, a supported named command, an exact absolute `.ps1` path with `sha256`, or an exact `server(tool)` | Use recorded requests or explicitly justified project proposals, not catch-all rules. Common shell/interpreter commands, wildcards and whole-client grants are rejected. |
 | `directories` | `--add-dir` for a literal path under an operator-supplied root | This also trusts configuration there, including skills/agents. It is not a read-only grant. Never substitute a home, drive root or shared parent. |
-| `writes` | Absolute-file `write(...)` rules resolved from a bound root | Require owned, individually enumerated files. Outside-checkout writes also need a containing directory request. Do not include credentials, immutable baselines, harness receipts or unrelated state. |
+| `writes` | Absolute `write(...)` rules for individual files, or directory subtrees with `"recursive":true` | Source can cover the entire bound application tree, not a shared parent. Evidence remains individually enumerated. Outside-checkout writes also need a containing directory request. Never include credentials, immutable baselines, harness receipts or unrelated state. |
 | `urls` | Explicit HTTPS origins, or explicit HTTP loopback development endpoints | No wildcard hosts, credentials, query strings or repository-path-shaped URL constraints. An origin is not repository-specific authorization. |
 
 `workspace`, `worktrees` and `evidence` are operator-supplied path bindings, not
 strings that a profile can redefine. Path entries use
 `{"root":"worktrees","path":"docs\\architecture.md","reason":"Owned design artifact"}`.
-Directories may use `"path":"."`; writes must name a file. Traversal, links,
+Directories may use `"path":"."`; writes name a file unless explicitly recursive. Traversal, links,
 device names and pattern characters are rejected. Bindings must not overlap:
 keep worktrees and private evidence outside the checkout and separate from each other.
 This intentionally conservative format does not cover every native selector.
 Leave unsupported script/interpreter requests unresolved for specific native
-review rather than weakening a rule to make validation pass.
+review rather than replacing them with a general interpreter grant.
 
-Named PowerShell cmdlets such as `shell(Get-ChildItem)` and Unix utilities such
+An approved existing PowerShell transport launcher can be proposed as
+`{"pattern":"shell(C:\\owner\\scripts\\Start-Transport.ps1)","reason":"Approved owner transport","sha256":"<64 hexadecimal characters>"}`.
+The helper reads that exact regular, nonlinked file and verifies its hash;
+it never executes it, approves a whole interpreter or adds its parent directory.
+Native matching/path access and readable dependencies still need verification.
+The hash check is at preview time, not an execution-time native hash pin.
+Script arguments are not restricted by the selector; retain the launcher's
+own target, trust, policy and process-ownership checks.
+
+For recursive source writes, use
+`{"root":"worktrees","path":".","recursive":true,"reason":"Application worktree subtree"}`.
+The helper renders an **absolute directory with a trailing separator** in
+`write(...)`, following the native directory form in
+[github/copilot-cli#285](https://github.com/github/copilot-cli/issues/285).
+Future files and generated role/run subdirectories need no filename inventory.
+`recursive` must be a boolean; omit it or use `false` for exact-file requests.
+Recursive evidence grants are rejected so a whole evidence directory cannot
+replace its named output files. This does not relax Architect's exact disjoint
+file assignments or allow writers to modify peer worktrees.
+
+These are native editor-tool approval proposals, **not an OS filesystem fence**.
+Shell file operations and container daemons have separate capabilities;
+`--add-dir` also trusts configuration and default native path access includes
+the working directory and temporary files. Actual shell containment needs
+separately reviewed native sandbox policy and host verification, not just
+`write(...)` rules. Do not assume the sandbox's default user-profile/cache
+access satisfies worktree-only writes. Native sandboxing is not enabled here;
+built-in edits follow its policy only on a best-effort basis, and a Docker
+daemon/cloud API is not confined by an editor path rule. Nested-path matching
+and workflow-agent inheritance still need live native verification; a failure
+must remain blocked, never fall back to unrestricted writes or interpreters.
+
+Named PowerShell cmdlets such as `shell(Get-ChildItem)`, JSON converters
+`shell(ConvertTo-Json)` / `shell(ConvertFrom-Json)`, and Unix utilities such
 as `shell(ls)` are supported through an explicit inspection-command list.
 This does not approve `powershell`, `pwsh`, `bash`, `sh` or arbitrary scripts.
 There is no universal "every read-only command" rule: plugins and versions vary,
@@ -68,6 +112,61 @@ dumps, and mixed-purpose utilities such as `find`, `sed`, `awk` and `env` are no
 read-only shortcuts. A syntactically valid proposal does not prove that native
 matching distinguishes every nested CLI verb; never fall back to a whole-client
 grant when a specific selector fails.
+
+Explicit execution proposals can also name file-operation commands:
+`New-Item`, `Set-Content`, `Add-Content`, `Copy-Item`, `Move-Item`, `Rename-Item`,
+`Remove-Item`, `Out-File`, `mkdir`, `touch`, `cp`, `mv`, `rm`, `rmdir` and `tee`,
+plus the `pytest` runner. These are **not inspection permissions** and are never
+added automatically or included in the starter. Their native rules cannot
+constrain file arguments, recursive deletion, test plugins or invoked project
+code. Scoped `writes` requests apply to editor tools, not these shell commands.
+Keep assigned file ownership, exact cleanup inventories and native controls;
+do not use shell writes to work around a denied editor request.
+
+For a delivery proposal, review each role separately: writers need only assigned
+file operations and Git publication; Test needs the chosen build/test runners;
+DevOps needs the chosen IaC, image publication, deployment, rollback and owned
+cleanup operations; Architect needs PR publication and complete review reads.
+Command-family entries do not enforce role isolation. Terraform, imperative
+Azure CLI, kubectl and azd are conditional alternatives, not authority to
+introduce competing stacks or mutate the same resources through multiple owners.
+Do not guess future app filenames, generated worktree identities or private
+endpoints. Bind recursive source access to the application-specific directory;
+Architect still assigns exact files within it. Resolve additional exact evidence
+outputs and origins from the approved plan and actual metadata. Cleanup script
+execution still needs its actual reviewed capability; generic interpreters are
+not a substitute. The trusted GitHub adapter now paginates all submitted,
+nondismissed review bodies and all PR inline comments/replies, including replies
+from other review IDs, and supplies them directly to Architect as untrusted
+evidence. The bot/current-SHA completion gate remains unchanged; unreadable or
+incomplete data cannot be assessed as a pass. No agent `gh api` grant is needed.
+
+URL entries are Copilot child-process tool approvals, not GitHub repository
+network configuration or Azure network/RBAC enforcement. Actual DNS, routing,
+firewalls, TLS and service authorization remain authoritative. Do not repair
+those prerequisites by changing the lab or granting new privileges.
+Where Azure RBAC is provisioned outside delivery, omit assignment create/delete
+requests and assignment/role-definition resources from Terraform/ARM/azd too.
+Exercise the normal lab operation rather than adding prerequisite-remediation
+scripts. On an access failure, stop with an actionable operator alert: operation,
+principal ID, resource scope, native error and correlation/request ID, plus the
+specific prerequisite to fix. Do not leak credentials, silently self-grant or
+blindly retry authorization failures. Reuse the existing failure/report path;
+the workflow files the finding and returns its evidence with `blocked`, stopping
+further repair/intake for a `DELIVERY` blocker at any report stage. This does not
+add a notification system or claim an alert was sent elsewhere.
+
+Where private lab transport is required, Architect assigns DevOps an
+application-side registration/handoff packet, not an owner-repository change
+or new transport. DevOps derives the actual deployed resource identity,
+private ingress/addresses, exact HTTPS/WSS hosts and start URLs, necessary
+API/redirect origins and read-only readiness operation, following the existing
+owner's service-extension contract. Use only a registered explicit selection
+in the approved launcher. `Start-LabBrowser.ps1` does not yet support Note
+Assistant: until the owner registration is completed, return the packet and
+specific required action as a blocker. Do not use an unrelated selection,
+interactive chooser, new tunnel or guessed endpoint. Owner-source changes also
+invalidate the reviewed script hash and require a new review.
 
 **This is a proposal format, not a sandbox or authority.** Named shell commands
 can have side effects through arguments, configuration, scripts or helpers.

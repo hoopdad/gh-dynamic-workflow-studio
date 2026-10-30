@@ -447,7 +447,14 @@ $global:invocations = 0
 $global:nodeExecutable = (Get-Command node -CommandType Application).Source
 $profilePath = Join-Path (Split-Path $Harness -Parent) 'permissions.example.json'
 $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json -AsHashtable
+$profile.writes = @(
+    @{ root = 'worktrees'; path = '.'; recursive = $true; reason = 'Reviewed application subtree fixture' }
+    @{ root = 'evidence'; path = 'ownership.json'; reason = 'Exact workflow inventory fixture' }
+)
+$profile | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $profilePath
 $global:expectedPermissionArguments = @('--allow-tool') + @($profile.tools.pattern) +
+    @("write($($global:fixture.worktreeRoot)$([IO.Path]::DirectorySeparatorChar))",
+        "write($(Join-Path $global:fixture.evidenceRoot 'ownership.json'))") +
     @("--add-dir=$($global:fixture.worktreeRoot)", "--add-dir=$($global:fixture.evidenceRoot)", '--allow-url') +
     @($profile.urls.origin)
 function global:git {

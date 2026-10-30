@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
@@ -45,6 +46,43 @@ test("owned file requests resolve within explicit roots and retain argv boundari
     await assert.rejects(reviewPermissions(profile, roots), /containing directory request/);
 });
 
+test("recursive application writes cover a directory without enumerating files or widening evidence access", async (t) => {
+    const { roots, profile } = await fixture(t);
+    profile.writes = [
+        { ...request("worktrees", "."), recursive: true },
+        request("evidence", "ownership.json"),
+    ];
+    const result = await reviewPermissions(profile, roots);
+    assert.deepEqual(result.nativeArgumentProposal.filter((argument) => argument.startsWith("write(")), [
+        `write(${roots.worktrees}${path.sep})`, `write(${path.join(roots.evidence, "ownership.json")})`,
+    ]);
+    assert.ok(!result.nativeArgumentProposal.includes(`write(${roots.evidence}${path.sep})`));
+    assert.deepEqual(await readdir(roots.worktrees), []);
+    assert.deepEqual(await readdir(roots.evidence), []);
+    profile.directories = [];
+    await assert.rejects(reviewPermissions(profile, roots), /containing directory request/);
+});
+
+test("recursive writes retain type, traversal, link and protected-evidence checks", async (t) => {
+    const { base, roots, profile } = await fixture(t);
+    for (const relative of [".", "outputs"]) {
+        profile.writes = [{ ...request("evidence", relative), recursive: true }];
+        await assert.rejects(reviewPermissions(profile, roots), /individual owned files/);
+    }
+    profile.writes = [{ ...request("worktrees", "."), recursive: "true" }];
+    await assert.rejects(reviewPermissions(profile, roots), /must be a boolean/);
+    profile.writes = [{ ...request("worktrees", "..\\outside"), recursive: true }];
+    await assert.rejects(reviewPermissions(profile, roots), /literal relative paths/);
+    await writeFile(path.join(roots.worktrees, "file.txt"), "preserve");
+    profile.writes = [{ ...request("worktrees", "file.txt"), recursive: true }];
+    await assert.rejects(reviewPermissions(profile, roots), /wrong file type/);
+    const link = path.join(roots.worktrees, "redirect");
+    await symlink(base, link, process.platform === "win32" ? "junction" : "dir");
+    profile.writes = [{ ...request("worktrees", "redirect"), recursive: true }];
+    await assert.rejects(reviewPermissions(profile, roots), /Linked permission paths/);
+    assert.equal(await readFile(path.join(roots.worktrees, "file.txt"), "utf8"), "preserve");
+});
+
 test("blanket tools, wildcard families, interpreters and command expressions are rejected", async (t) => {
     const { roots, profile } = await fixture(t);
     for (const pattern of ["shell", "shell(git)", "shell(git:*)", "shell(git status:*)", "write", "write(.)",
@@ -56,20 +94,76 @@ test("blanket tools, wildcard families, interpreters and command expressions are
     }
 });
 
-test("named PowerShell and Unix inspection commands work without whole-interpreter or mixed-purpose leaf grants", async (t) => {
+test("named PowerShell and Unix inspection commands work without whole-interpreter grants", async (t) => {
     const { roots, profile } = await fixture(t);
-    profile.tools = ["Get-ChildItem", "Get-Content", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path",
+    profile.tools = ["Get-ChildItem", "Get-Content", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path", "ConvertTo-Json", "ConvertFrom-Json",
         "ls", "pwd", "cat", "grep", "stat", "sha256sum"].map((command) => ({ pattern: `shell(${command})`, reason: "Inspection." }));
     const result = await reviewPermissions(profile, roots);
     for (const entry of profile.tools) assert.ok(result.nativeArgumentProposal.includes(entry.pattern));
     for (const command of ["pwsh", "powershell", "bash", "sh", "git", "az", "docker", "kubectl", "find", "sed",
-        "awk", "env", "xargs", "tee", "sort", "uniq", "less", "more", "date", "Get-ChildItem;Remove-Item"]) {
+        "awk", "env", "xargs", "sort", "uniq", "less", "more", "date", "Get-ChildItem;Remove-Item"]) {
         profile.tools = [{ pattern: `shell(${command})`, reason: "Rejected broad or mixed-purpose request." }];
         await assert.rejects(reviewPermissions(profile, roots), /Shell requests/);
     }
 });
 
-test("path requests cannot escape bindings or request whole-root writes, devices or patterns", async (t) => {
+test("explicit file-operation and test-runner proposals remain distinct from editor writes and never execute", async (t) => {
+    const { roots, profile } = await fixture(t);
+    profile.tools = ["New-Item", "Set-Content", "Add-Content", "Copy-Item", "Move-Item", "Rename-Item", "Remove-Item",
+        "Out-File", "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
+        "npm run", "pip install", "terraform apply", "docker build", "az containerapp update", "kubectl apply"]
+        .map((command) => ({ pattern: `shell(${command})`, reason: "Explicit execution proposal, not inspection." }));
+    profile.writes = [request("evidence", "ownership.json")];
+    const result = await reviewPermissions(profile, roots);
+    for (const entry of profile.tools) assert.ok(result.nativeArgumentProposal.includes(entry.pattern));
+    assert.ok(result.nativeArgumentProposal.includes(`write(${path.join(roots.evidence, "ownership.json")})`));
+    assert.deepEqual(await readdir(roots.worktrees), []);
+    assert.deepEqual(await readdir(roots.evidence), []);
+    for (const command of ["pwsh", "bash", "npm", "pip", "terraform", "docker", "az", "kubectl", "Start-Process",
+        "Invoke-Expression", "New-Item -ItemType", "Set-Content;whoami"]) {
+        profile.tools = [{ pattern: `shell(${command})`, reason: "No blanket, flag or expression request." }];
+        await assert.rejects(reviewPermissions(profile, roots), /Shell requests/);
+    }
+});
+
+test("an explicitly reviewed transport script needs its exact existing path and hash and is never executed", async (t) => {
+    const { base, roots, profile } = await fixture(t);
+    const directory = path.join(base, "owner transport");
+    await mkdir(directory);
+    const file = path.join(directory, "Start-Transport.ps1");
+    const source = "throw 'THIS REVIEWED SCRIPT MUST NOT BE EXECUTED BY THE PREVIEW'\n";
+    await writeFile(file, source);
+    const entry = { pattern: `shell(${file})`, reason: "Approved owner transport only.",
+        sha256: createHash("sha256").update(source).digest("hex") };
+    profile.tools = [entry];
+    const result = await reviewPermissions(profile, roots);
+    assert.ok(result.nativeArgumentProposal.includes(entry.pattern));
+    assert.deepEqual(result.requests.writes, []);
+    assert.deepEqual(await readdir(roots.worktrees), []);
+    assert.equal(await readFile(file, "utf8"), source);
+    for (const candidate of [
+        { pattern: entry.pattern, reason: entry.reason },
+        { ...entry, sha256: "0".repeat(64) },
+        { ...entry, pattern: "shell(Start-Transport.ps1)" },
+        { ...entry, pattern: "shell(pwsh)" },
+        { ...entry, pattern: `shell(${file} -Mode Start)` },
+        { ...entry, pattern: `shell(${path.join(directory, "missing.ps1")})` },
+        { ...entry, pattern: `shell(${path.join(directory, "unreviewed.cmd")})` },
+        { ...entry, pattern: `shell(${process.platform === "win32" ? "\\\\unapproved.invalid\\share\\run.ps1" : "//unapproved.invalid/share/run.ps1"})` },
+    ]) {
+        profile.tools = [candidate];
+        await assert.rejects(reviewPermissions(profile, roots), /Script request|Script SHA256/);
+    }
+    const link = path.join(base, "transport-link");
+    await symlink(directory, link, process.platform === "win32" ? "junction" : "dir");
+    profile.tools = [{ ...entry, pattern: `shell(${path.join(link, "Start-Transport.ps1")})` }];
+    await assert.rejects(reviewPermissions(profile, roots), /Linked permission paths/);
+    await writeFile(file, `${source}# changed after review\n`);
+    profile.tools = [entry];
+    await assert.rejects(reviewPermissions(profile, roots), /reviewed SHA256/);
+});
+
+test("exact-file requests cannot escape bindings or use directory shortcuts, devices or patterns", async (t) => {
     const { roots, profile } = await fixture(t);
     for (const file of [".", "..\\outside", "docs\\..\\outside", "C:\\foreign\\file", "/foreign/file",
         "docs\\*.md", "docs\\file:stream", "docs\\NUL", "docs\\name.", "docs\\file)"]) {
