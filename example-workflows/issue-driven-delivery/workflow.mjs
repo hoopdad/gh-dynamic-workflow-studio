@@ -493,6 +493,14 @@ Include the failed operation, principal ID (or explicitly unavailable), exact re
 correlation/request ID (or explicitly unavailable), attempted checks and the specific operator fix.
 Do not silently self-grant, change externally managed trust/network/authentication settings or blindly retry access failures.
 The workflow publishes the blocker and returns it to the operator; do not claim a separate alert was sent.
+For headless native approvals, do not assume flag-prefix rules authorize Python/Node interpreter modes.
+Plan genuine project test entrypoints around explicitly approved runners (for example pytest or npm test,
+when appropriate and authorized), not ad hoc interpreter eval, stdin programs or generic PowerShell.
+Do not generate wrappers or package scripts merely to bypass a denied operation. If an essential
+entrypoint is unsupported, return the exact native capability blocker instead of claiming validation.
+Keep named subcommands first: enter the selected IaC/package directory with fail-fast Set-Location,
+then use terraform fmt/init or npm install/test when selected, not leading -chdir or --prefix forms.
+Use docker version rather than docker --version under a named version grant.
 Where private ownership accounting is configured, the runtime initializes it before agents. Preserve its
 accounting identity/markers and all existing assets when publishing updates; never replace it with an empty ledger.
 Local Git worktrees, source/design files and Git commits/branches are not external cleanup assets.

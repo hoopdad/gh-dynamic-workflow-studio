@@ -45,6 +45,8 @@
     { "pattern": "shell(Resolve-Path)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Select-String)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Where-Object)", "reason": "Filter inspected data and validate disjoint ownership paths; does not grant nested commands or filesystem mutations." },
+    { "pattern": "shell(ForEach-Object)", "reason": "Iterate assigned file/resource metadata and parsed records. This is an execution utility, not a read-only guarantee; nested operations remain subject to native controls and existing ownership." },
+    { "pattern": "shell(Out-Null)", "reason": "Discard incidental pipeline output without changing owned source, evidence or native command approval." },
     { "pattern": "shell(Compare-Object)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Measure-Object)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Date)", "reason": "PowerShell inspection." },
@@ -410,7 +412,8 @@
     { "pattern": "shell(gh run rerun)", "reason": "DevOps only for selected Actions delivery: retry only an evidenced transient failure of the same candidate within the existing budget; never waive failed checks or renew the model allowance." },
     { "pattern": "shell(gh run download)", "reason": "Test/DevOps only for selected Actions delivery: save only candidate-owned sanitized test/deployment artifacts to approved run paths, preserving evidence and avoiding credential dumps." },
     { "pattern": "shell(ConvertTo-Json)", "reason": "Writers/DevOps: serialize assigned schema-valid configuration, ownership and sanitized evidence before atomic publication; this does not authorize file writes or secret dumps." },
-    { "pattern": "shell(ConvertFrom-Json)", "reason": "Writers/DevOps: parse approved configuration and run inventory without executing it or fabricating ownership/cleanup evidence." }
+    { "pattern": "shell(ConvertFrom-Json)", "reason": "Writers/DevOps: parse approved configuration and run inventory without executing it or fabricating ownership/cleanup evidence." },
+    { "pattern": "shell(npm --version)", "reason": "Inspect installed npm version using the exact flag form verified in native workflow agents; not a whole npm or interpreter grant." }
   ],
   "directories": [
     { "root": "worktrees", "path": ".", "reason": "Explicit application-specific worktree scope, not other projects or the shared worktree parent." },
@@ -429,6 +432,9 @@
     { "origin": "https://login.microsoftonline.com", "reason": "Existing authorized Azure identity flow only; no automatic login, cache copying, credential dumps or global profile switches." },
     { "origin": "https://packagefeedproxy.microsoft.io", "reason": "Required Microsoft npm and sole remote pip feed; preserve TLS and never upload credential-bearing host configuration." },
     { "origin": "https://registry.terraform.io", "reason": "DevOps: resolve only the selected pinned Terraform providers/modules for owned IaC; not authority for unrelated dependency changes." },
-    { "origin": "https://releases.hashicorp.com", "reason": "DevOps: selected pinned Terraform provider/tool artifacts through existing policy; no unreviewed upgrade or global tool installation." }
+    { "origin": "https://releases.hashicorp.com", "reason": "DevOps: selected pinned Terraform provider/tool artifacts through existing policy; no unreviewed upgrade or global tool installation." },
+    { "origin": "https://hub.docker.com", "reason": "DevOps: read selected public base-image tag metadata to resolve and verify the immutable digest; preserve TLS and do not infer platform support from a mutable tag alone." },
+    { "origin": "https://auth.docker.io", "reason": "DevOps: anonymous pull authorization for the selected public base-image metadata only. Never print or persist bearer tokens or upload host credentials." },
+    { "origin": "https://registry-1.docker.io", "reason": "DevOps: read the selected public base-image manifests/digests through the official registry; retain TLS and existing identity/network controls." }
   ]
 }

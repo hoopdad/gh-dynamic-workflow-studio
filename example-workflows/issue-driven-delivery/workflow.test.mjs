@@ -222,6 +222,9 @@ test("literal delivery flow fans out all six writers, then gates deployment, E2E
             assert.match(prompt, /Use native Windows paths for actual filesystem commands/);
             assert.match(prompt, /Do not rewrite private ownership merely to design, stage, commit or push source/);
             assert.match(prompt, /do not create ad hoc sibling temporary evidence files/);
+            assert.match(prompt, /Plan genuine project test entrypoints around explicitly approved runners/);
+            assert.match(prompt, /Do not generate wrappers or package scripts merely to bypass a denied operation/);
+            assert.match(prompt, /not leading -chdir or --prefix forms/);
         }
         if (!options.label.includes(":develop:")) return original(prompt, options);
         active++;

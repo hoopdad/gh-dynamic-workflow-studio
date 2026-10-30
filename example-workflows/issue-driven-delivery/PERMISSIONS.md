@@ -43,7 +43,7 @@ An unlisted operation must still prompt or remain blocked.
 `permissions.delivery-git.proposed.json` is the expanded, **unapplied lab-specific
 draft**, not a replacement for the inspection starter or an automatically
 installed profile. It includes inspection and execution proposals, recursive
-application-worktree editor writes, two named evidence outputs, selected HTTPS
+application-worktree editor writes, three named evidence outputs, selected HTTPS
 origins and the approved existing lab launcher with its reviewed hash.
 Its absolute owner-script path/hash are workstation-specific; other users must
 review and replace those against their own approved owner source. Merely keeping
@@ -111,6 +111,8 @@ as `shell(ls)` are supported through an explicit inspection-command list.
 `shell(Write-Output)` emits console evidence; it does not grant file redirection.
 `shell(Where-Object)` supports data/path filtering; nested operations still need
 their own approvals. Neither grants a whole interpreter.
+`shell(Out-Null)` discards pipeline output. `shell(ForEach-Object)` is an explicit
+execution utility, not a read-only guarantee or permission for nested operations.
 The delivery profile's exact `ownership.pending.json` evidence grant supports
 atomic external-ledger publication, not directory writes. Bootstrap exposes its
 path; unresolved pending publication blocks teardown.
@@ -139,6 +141,21 @@ not-yet-created worktree even when its parent is allowed.
 Native CLI 1.0.105 classifies
 `git -C <path> status` with an allow-match identity of `git -C`, which does not
 match the reviewed `git status` grant. Do not solve that by granting whole Git.
+Likewise, enter the selected IaC/package directory before `terraform fmt/init`
+or `npm install/test`, rather than using leading `-chdir` or `--prefix` forms.
+Use the already named `docker version` form, not `docker --version`.
+
+Native Windows CLI 1.0.105 workflow experiments rejected both literal and `:*`
+prefix rules for Python version/unittest/compileall/json.tool and Node
+version/check/test modes, even in standalone calls. All three arbitrary
+Python/Node execution controls also stayed denied. Those mode rules are not
+working narrow approvals and remain rejected by this helper; do not substitute
+whole-interpreter access. The exact `shell(npm --version)` request did work and
+is the only supported flag-form exception. Use genuine, explicitly authorized
+project test entrypoints such as `pytest` or `npm test` when appropriate.
+Do not create wrappers/package scripts merely to conceal a denied command.
+An essential unsupported entrypoint requires specific native review or a
+capability blocker, not a fabricated passing check.
 
 For a delivery proposal, review each role separately: writers need only assigned
 file operations and Git publication; Test needs the chosen build/test runners;
@@ -162,6 +179,10 @@ URL entries are Copilot child-process tool approvals, not GitHub repository
 network configuration or Azure network/RBAC enforcement. Actual DNS, routing,
 firewalls, TLS and service authorization remain authoritative. Do not repair
 those prerequisites by changing the lab or granting new privileges.
+The delivery draft explicitly names `hub.docker.com`, `auth.docker.io` and
+`registry-1.docker.io` for selected public base-image metadata/digest resolution.
+These are not wildcard registry or credential-upload approvals. Preserve TLS;
+do not print/persist anonymous bearer tokens or host credentials.
 Where Azure RBAC is provisioned outside delivery, omit assignment create/delete
 requests and assignment/role-definition resources from Terraform/ARM/azd too.
 Exercise the normal lab operation rather than adding prerequisite-remediation

@@ -237,3 +237,13 @@ Atomic external-ledger updates have one explicit staging-file grant:
 ownership.pending.json. Bootstrap hands off ownershipPendingPath; cleanup fails
 closed while pending publication exists. The existing offline accounting test
 covers pending refusal and clean continuation; no new paths/dependencies.
+
+2026-10-30: reviewed from `7743cab` for cycle-07 command/registry follow-up.
+Native literal and fixed-prefix Python/Node mode experiments failed without
+whole-interpreter access; those requests remain rejected. Only the proven exact
+npm --version form is admitted. Added named ForEach-Object/Out-Null requests and
+three explicit official Docker metadata origins. Common prompts distinguish
+genuine approved project test entrypoints from bypass wrappers and prefer
+cwd-first Terraform/npm plus docker version. Colocated permission/prompt tests
+cover the changes; no paths, dependencies, installer payload or cleanup guards
+changed.

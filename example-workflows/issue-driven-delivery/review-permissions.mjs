@@ -12,14 +12,15 @@ const inspectionCommands = new Set([
     "get-psprovider", "get-process", "get-service", "get-netadapter", "get-netipaddress", "get-netipconfiguration",
     "get-netroute", "get-nettcpconnection", "get-netudpendpoint", "get-dnsclient", "get-dnsclientserveraddress",
     "resolve-dnsname", "test-path", "resolve-path", "select-string", "where-object", "compare-object", "measure-object", "get-date",
-    "get-culture", "get-uiculture", "get-computerinfo", "convertto-json", "convertfrom-json",
+    "get-culture", "get-uiculture", "get-computerinfo", "convertto-json", "convertfrom-json", "out-null",
     "ls", "pwd", "cat", "head", "tail", "grep", "wc", "cut", "tr", "stat", "readlink", "realpath", "basename", "dirname",
     "du", "df", "uname", "whoami", "id", "cmp", "diff", "comm", "sha256sum", "sha512sum", "cksum",
 ]);
 const executionCommands = new Set([
     "set-location", "new-item", "set-content", "add-content", "copy-item", "move-item", "rename-item", "remove-item", "out-file",
-    "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
+    "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest", "foreach-object",
 ]);
+const flagCommands = new Set(["npm --version"]);
 
 function object(value, keys, label) {
     if (!value || typeof value !== "object" || Array.isArray(value)
@@ -73,6 +74,7 @@ async function tool(entry) {
     }
     if (Object.hasOwn(entry, "sha256")) throw new Error("Script SHA256 requires an absolute .ps1 request");
     if (pattern.startsWith("shell(")) {
+        if (flagCommands.has(script)) return pattern;
         const command = /^shell\(([a-zA-Z0-9_][a-zA-Z0-9_.-]*(?: [a-zA-Z0-9_][a-zA-Z0-9_.-]*)*)\)$/.exec(pattern)?.[1];
         const executable = command?.split(" ")[0].toLowerCase().replace(/\.exe$/, "");
         if (!command || interpreters.has(executable) || /^python\d+(?:\.\d+)*$/.test(executable)

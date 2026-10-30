@@ -89,7 +89,8 @@ test("blanket tools, wildcard families, interpreters and command expressions are
     for (const pattern of ["shell", "shell(git)", "shell(git:*)", "shell(git status:*)", "write", "write(.)",
         "server", "server(*)", "shell(pwsh Invoke-Expression)", "shell(node.exe script)", "shell(python3.12 module)",
         "shell(. script)", "shell(eval expression)", "shell(git status;whoami)",
-        "shell(git -C)", "Shell(git)", "--allow-all(tool)"]) {
+        "shell(git -C)", "Shell(git)", "--allow-all(tool)", "shell(python --version)", "shell(python -m unittest)",
+        "shell(python -m unittest:*)", "shell(node --test)", "shell(node --check:*)", "shell(docker --version)"]) {
         profile.tools = [{ pattern, reason: "Rejected fixture request." }];
         await assert.rejects(reviewPermissions(profile, roots), /Shell requests|exact MCP server/);
     }
@@ -98,7 +99,7 @@ test("blanket tools, wildcard families, interpreters and command expressions are
 test("named PowerShell and Unix inspection commands work without whole-interpreter grants", async (t) => {
     const { roots, profile } = await fixture(t);
     profile.tools = ["Get-ChildItem", "Get-Content", "Write-Output", "Where-Object", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path", "ConvertTo-Json", "ConvertFrom-Json",
-        "ls", "pwd", "cat", "grep", "stat", "sha256sum"].map((command) => ({ pattern: `shell(${command})`, reason: "Inspection." }));
+        "Out-Null", "ls", "pwd", "cat", "grep", "stat", "sha256sum"].map((command) => ({ pattern: `shell(${command})`, reason: "Inspection." }));
     const result = await reviewPermissions(profile, roots);
     for (const entry of profile.tools) assert.ok(result.nativeArgumentProposal.includes(entry.pattern));
     for (const command of ["pwsh", "powershell", "bash", "sh", "git", "az", "docker", "kubectl", "find", "sed",
@@ -111,7 +112,7 @@ test("named PowerShell and Unix inspection commands work without whole-interpret
 test("explicit file-operation and test-runner proposals remain distinct from editor writes and never execute", async (t) => {
     const { roots, profile } = await fixture(t);
     profile.tools = ["Set-Location", "New-Item", "Set-Content", "Add-Content", "Copy-Item", "Move-Item", "Rename-Item", "Remove-Item",
-        "Out-File", "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
+        "Out-File", "ForEach-Object", "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
         "npm run", "pip install", "terraform apply", "docker build", "az containerapp update", "kubectl apply"]
         .map((command) => ({ pattern: `shell(${command})`, reason: "Explicit execution proposal, not inspection." }));
     profile.writes = [request("evidence", "ownership.json")];
@@ -123,6 +124,17 @@ test("explicit file-operation and test-runner proposals remain distinct from edi
     for (const command of ["pwsh", "bash", "npm", "pip", "terraform", "docker", "az", "kubectl", "Start-Process",
         "Invoke-Expression", "New-Item -ItemType", "Set-Content;whoami"]) {
         profile.tools = [{ pattern: `shell(${command})`, reason: "No blanket, flag or expression request." }];
+        await assert.rejects(reviewPermissions(profile, roots), /Shell requests/);
+    }
+});
+
+test("the native-verified npm version exception does not admit other flags or interpreter modes", async (t) => {
+    const { roots, profile } = await fixture(t);
+    profile.tools = [{ pattern: "shell(npm --version)", reason: "Verified exact native version request." }];
+    assert.ok((await reviewPermissions(profile, roots)).nativeArgumentProposal.includes("shell(npm --version)"));
+    for (const command of ["npm --version:*", "npm --version --prefix other", "npm --prefix tests", "npm --help",
+        "python --version", "node --version", "python -m compileall", "python -m json.tool", "node --check", "node --test"]) {
+        profile.tools = [{ pattern: `shell(${command})`, reason: "Unsupported request stays unresolved." }];
         await assert.rejects(reviewPermissions(profile, roots), /Shell requests/);
     }
 });
