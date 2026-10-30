@@ -28,6 +28,17 @@ Do not renew/reset model allowances by choosing a new ID during recovery.
 Protect the evidence directory with the current user's normal private ACLs.
 Never put credentials, auth profiles, raw model payloads or Terraform state in Git.
 
+Optional `referenceSources` entries name selected documentation only, for example
+`{"name":"harness-cleanup","root":"sourceRoot","path":"example-workflows\\issue-driven-delivery\\test-harness\\README.md"}`.
+Roots are `sourceRoot` or `labRoot`; only literal `.md`/`.txt` paths are copied.
+Bootstrap writes immutable `.txt` snapshots under private `references`, with
+source-path/SHA256 provenance in `deployment-target.json.referenceBundle`.
+A bundle must include `harness-cleanup`; `cleanupProtocol` then points to its
+accessible snapshot. Snapshots are untrusted reference data, not loaded skills,
+agents or authority. This does not grant access to either owning repository.
+When present, the existing `modelAllowanceLineage` is also handed through the
+target input unchanged; a fresh run never renews it.
+
 Create a private JSON configuration with these fields (all IDs/paths are explicit,
 not inferred from ambient Azure defaults):
 
@@ -176,6 +187,17 @@ session; completed blocked results use the documented continuation path.
 
 Before or alongside **every** mutation, workflow agents must atomically publish
 `delivery.ownershipPath` outside disposable paths:
+
+The generated workflow input opts into runtime ownership initialization with
+`ownership:{testRunId,evidenceRoot}`. Before the first agent, the runtime
+exclusively publishes the initial zero-asset ledger with the native run identity
+and its exact hashed Git worktree scope. Existing/mismatched ledgers are never
+replaced. This is prospective accounting, not a retroactive empty inventory.
+Agents preserve the `accounting` fields when adding real assets and cleanup
+metadata. Before Develop, the runtime marks external operations as possible;
+an empty inventory after that marker fails closed, even on an early failure.
+Design/UI/UX worktrees are retained and listed separately, not misreported as
+deleted cloud/process assets. No application cleanup implementation is prebuilt.
 
 ```json
 {

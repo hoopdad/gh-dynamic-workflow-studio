@@ -34,6 +34,12 @@ try {
     }
     $plan = @(Get-LabCleanupPlan $manifest $inventory)
     $receipt.plan = $plan
+    if ($inventory.Contains('accounting')) {
+        $trees = Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'worktree', 'list', '--porcelain')
+        $receipt.retained = @(Get-LabDisposableWorktrees $manifest.repositoryRoot $trees | Where-Object {
+            Test-LabDescendant $inventory.accounting.gitWorktreeRoot $_.path
+        } | ForEach-Object { @{ kind = 'gitWorktree'; path = $_.path; head = $_.head; status = 'retained, not deleted' } })
+    }
     if ($plan.Count) {
         $cleanup = $inventory.cleanup
         if (-not $cleanup -or -not (Test-LabDescendant $manifest.evidenceRoot $cleanup.path) -or
@@ -63,7 +69,7 @@ try {
             return
         }
     } else {
-        $receipt.closure = 'proven closed; no new run-owned processes or mutations started'
+        $receipt.closure = 'proven closed; no run-owned external assets inventoried; local worktrees retained separately'
     }
     $current = @(Get-LabSharedBaseline $manifest)
     $before = ConvertTo-LabCanonicalJson $baseline.shared
@@ -73,7 +79,7 @@ try {
     $receipt.status = $(if ($Mode -eq 'Apply' -and -not $WhatIfPreference) { 'verified' } else { 'inspection only' })
 } catch {
     $receipt.error = $_.Exception.Message
-    $receipt.retained = @($receipt.plan)
+    $receipt.retained = @($receipt.retained) + @($receipt.plan)
     throw
 } finally {
     if ($Mode -eq 'Apply' -and -not $WhatIfPreference -and $lock) {

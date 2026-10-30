@@ -197,3 +197,21 @@ packet for an existing owner transport; no parallel tunnel, implicit owner-repo
 edits or external RBAC remediation. Runtime/tests, permission guide and README
 cover these boundaries; mocked real-stage harness checks cover recursive/exact
 child grants. No active launcher, target installation, lab or permission changes.
+
+2026-10-30: reviewed from `6d387ff` for cycle-04 native repair. Recursive editor
+rules now generate a validated absolute-directory globstar: live Windows 1.0.105
+workflow fixtures rejected directory/trailing-separator forms, accepted nested/
+top-level and exact evidence writes with the full rendered profile, and denied
+a readable-CWD write outside those rules. Named Set-Location supports approved
+Git subcommands without git -C's different native allow-match identity.
+`LabDeliveryTest.psm1:Publish-LabReferences` snapshots only explicitly selected
+owner/harness documents as private non-executable hash-bound reference data.
+Bootstrap forwards references and unchanged model allowance lineage.
+Optional workflow `ownership:{testRunId,evidenceRoot}` initializes honest
+run-bound accounting before agents; post-Develop empty ledgers still block
+cleanup, and local Git worktrees are retained separately. Design blockers now
+publish actionable Architect DELIVERY findings; unresolved environment facts
+route to DevOps, not supervisor provisioning or a new readiness phase.
+No paths added/deleted, new dependency or installer payload change. Colocated
+example suites include native-pattern, initial-accounting, blocked-design and
+reference regressions; the PowerShell wrapper now covers 25 offline checks.

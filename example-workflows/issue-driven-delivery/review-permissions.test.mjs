@@ -54,9 +54,10 @@ test("recursive application writes cover a directory without enumerating files o
     ];
     const result = await reviewPermissions(profile, roots);
     assert.deepEqual(result.nativeArgumentProposal.filter((argument) => argument.startsWith("write(")), [
-        `write(${roots.worktrees}${path.sep})`, `write(${path.join(roots.evidence, "ownership.json")})`,
+        `write(${roots.worktrees}${path.sep}**)`, `write(${path.join(roots.evidence, "ownership.json")})`,
     ]);
     assert.ok(!result.nativeArgumentProposal.includes(`write(${roots.evidence}${path.sep})`));
+    assert.ok(!result.nativeArgumentProposal.includes(`write(${roots.evidence}${path.sep}**)`));
     assert.deepEqual(await readdir(roots.worktrees), []);
     assert.deepEqual(await readdir(roots.evidence), []);
     profile.directories = [];
@@ -109,7 +110,7 @@ test("named PowerShell and Unix inspection commands work without whole-interpret
 
 test("explicit file-operation and test-runner proposals remain distinct from editor writes and never execute", async (t) => {
     const { roots, profile } = await fixture(t);
-    profile.tools = ["New-Item", "Set-Content", "Add-Content", "Copy-Item", "Move-Item", "Rename-Item", "Remove-Item",
+    profile.tools = ["Set-Location", "New-Item", "Set-Content", "Add-Content", "Copy-Item", "Move-Item", "Rename-Item", "Remove-Item",
         "Out-File", "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
         "npm run", "pip install", "terraform apply", "docker build", "az containerapp update", "kubectl apply"]
         .map((command) => ({ pattern: `shell(${command})`, reason: "Explicit execution proposal, not inspection." }));

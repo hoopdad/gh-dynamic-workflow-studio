@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { command, githubIO, renderStack, requestPlan, resolveWorktreeRoot, roles, runDelivery, validatePlan, validateReport } from "./workflow.mjs";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { command, githubIO, initializeOwnership, renderStack, requestPlan, resolveWorktreeRoot, roles, runDelivery, validatePlan, validateReport } from "./workflow.mjs";
 
 const sha = "a".repeat(40);
 const issue = { number: 7, title: "Add a greeting", body: "Show a greeting.", url: "https://github.com/example/app/issues/7", state: "OPEN" };
@@ -149,6 +150,66 @@ function queueFixture(handler = () => undefined, args = {}) {
     f.io.finish = async (number) => { f.calls.push(`finish:${number}`); };
     return { ...f, queue, prompts, issueSha };
 }
+
+test("ownership initializes before agents, records external-operation-capable stages and never resets existing assets", async (t) => {
+    const base = await realpath(await mkdtemp(path.join(tmpdir(), "delivery-accounting-")));
+    t.after(() => rm(base, { recursive: true, force: true }));
+    const evidenceRoot = path.join(base, "private");
+    await mkdir(evidenceRoot);
+    const config = { testRunId: "accounting-123", evidenceRoot };
+    const file = path.join(evidenceRoot, "ownership.json");
+    const f = fixture(undefined, {}, { ownership: config });
+    const original = f.ctx.agent;
+    const observed = [];
+    f.ctx.agent = async (prompt, options) => {
+        observed.push({ label: options.label, inventory: JSON.parse(await readFile(file, "utf8")) });
+        return original(prompt, options);
+    };
+    assert.equal((await f.run()).status, "done");
+    assert.equal(observed[0].inventory.accounting.externalOperationsPossible, false);
+    assert.ok(observed.filter(item => item.label.includes(":develop:")).every(item => item.inventory.accounting.externalOperationsPossible));
+    const inventory = JSON.parse(await readFile(file, "utf8"));
+    inventory.assets.push({ id: "preserve-planned-asset" });
+    await writeFile(file, JSON.stringify(inventory));
+    const record = await initializeOwnership(config, f.ctx.runId, resolveWorktreeRoot());
+    await record.markExternalOperationsPossible();
+    assert.deepEqual(JSON.parse(await readFile(file, "utf8")), inventory);
+    await assert.rejects(initializeOwnership(config, "another-run", resolveWorktreeRoot()), /identity\/state mismatch/);
+    await assert.rejects(initializeOwnership({ ...config, evidenceRoot: process.cwd() }, f.ctx.runId, resolveWorktreeRoot()), /disjoint/);
+    const linked = path.join(base, "linked");
+    await symlink(evidenceRoot, linked, process.platform === "win32" ? "junction" : "dir");
+    await assert.rejects(initializeOwnership({ ...config, evidenceRoot: linked }, f.ctx.runId, resolveWorktreeRoot()), /Linked/);
+});
+
+test("blocked initial and repair designs publish actionable operational findings without starting another writer", async () => {
+    for (const blockedRound of [1, 2]) {
+        const f = fixture(label => {
+            if (label === `${blockedRound}:design:Architect`) return { status: "blocked", summary: "Native editor denied the assigned design write" };
+            if (label === "1:local:Test" && blockedRound === 2) return makeReport({ status: "rework", findings: [finding] });
+        });
+        const result = await f.run();
+        assert.equal(result.status, "blocked");
+        assert.match(result.summary, /Native editor denied/);
+        assert.equal(result.findings[0].owner, "Architect");
+        assert.equal(result.findings[0].requirementId, "DELIVERY");
+        assert.ok(result.evidence.length);
+        assert.ok(f.calls.includes("file:design:DELIVERY"));
+        assert.ok(!f.calls.includes(`${blockedRound}:develop:Web`));
+        assert.ok(!f.calls.includes("finish"));
+    }
+    assert.throws(() => validateReport(makeReport({status: "rework", findings: [{...finding, owner: "Architect"}]}), makePlan()), /existing requirement/);
+});
+
+test("a previous Design blocker closes only after the actual published document is verified", async () => {
+    for (const published of [true, false]) {
+        const f = fixture(undefined, { design: async () => published ? "# Published" : "" });
+        f.open.push({number: 101, body: "<!-- delivery:7:feature/issue-7:test -->\nStage: design\n"});
+        const result = await f.run();
+        assert.equal(result.status, published ? "done" : "blocked");
+        assert.equal(f.calls.includes("close:101"), published);
+        if (published) assert.ok(f.calls.indexOf("close:101") < f.calls.indexOf("1:develop:Web"));
+    }
+});
 
 test("literal delivery flow fans out all six writers, then gates deployment, E2E and completed review", async () => {
     let active = 0;

@@ -17,7 +17,7 @@ const inspectionCommands = new Set([
     "du", "df", "uname", "whoami", "id", "cmp", "diff", "comm", "sha256sum", "sha512sum", "cksum",
 ]);
 const executionCommands = new Set([
-    "new-item", "set-content", "add-content", "copy-item", "move-item", "rename-item", "remove-item", "out-file",
+    "set-location", "new-item", "set-content", "add-content", "copy-item", "move-item", "rename-item", "remove-item", "out-file",
     "mkdir", "touch", "cp", "mv", "rm", "rmdir", "tee", "pytest",
 ]);
 
@@ -164,7 +164,7 @@ export async function reviewPermissions(profile, bindings) {
         const recursive = entry?.recursive === true;
         if (recursive && entry.root === "evidence") throw new Error("Evidence writes must name individual owned files, not recursive directories");
         const resolved = await requestedPath(entry, roots, recursive, true);
-        return recursive ? `${resolved}${path.sep}` : resolved;
+        return recursive ? `${resolved}${path.sep}**` : resolved;
     })), "write");
     if (writes.some((file) => !inside(roots.workspace, file) && !directories.some((directory) => inside(directory, file)))) {
         throw new Error("Writes outside the workspace also need an explicit containing directory request");
@@ -183,7 +183,7 @@ export async function reviewPermissions(profile, bindings) {
             "Shell rules match command families, not full arguments, scripts, branches, repositories or cloud resources.",
             "Script hashes are checked during preview, not pinned by native approval at execution; path access remains separate.",
             "Directory access also trusts configuration there; file-write requests do not authorize shell redirection.",
-            "Recursive write proposals use an absolute directory with a trailing separator; they are not shell filesystem containment.",
+            "Recursive write proposals generate an absolute directory-bounded globstar; they are not shell filesystem containment.",
             "Strict shell containment requires separately reviewed native sandbox policy and host verification; it is not enabled here.",
             "Native checks, managed policies, deny rules and existing identity/RBAC limits still apply.",
             "Profile validation is not a sandbox or approval. Workflow-agent inheritance needs separate native verification.",

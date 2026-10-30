@@ -263,6 +263,7 @@ No production authorization is implied.
 | `stackAfter` | `0` | Zero starts a stack; otherwise continue after this workflow-managed, open, latest accepted PR |
 | `readyLabel` | `workflow:ready` | Opt-in queue; removed per feature only after its gates and stack-order publication pass |
 | `worktreeRoot` | Application-specific sibling `.delivery-worktrees/<application-name>` | Absolute persistent parent outside the application checkout and OS temporary directory; paths remain isolated per run/issue/role/round |
+| `ownership` | Omitted | Optional `{testRunId,evidenceRoot}` for private run-bound ownership initialization before agents; existing accounting/assets are preserved and post-Develop empty ledgers cannot prove closure |
 | `maxRounds` | Uncapped | Only an explicitly supplied positive safe integer caps design/build/test/review repair rounds per issue |
 | `maxDeploymentAttempts` | `3` | Deployment/smoke attempts per round |
 | `reviewPolls` | `60` | Ten-second waits for a completed current-SHA review |

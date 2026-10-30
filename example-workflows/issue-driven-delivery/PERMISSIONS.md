@@ -81,9 +81,12 @@ own target, trust, policy and process-ownership checks.
 
 For recursive source writes, use
 `{"root":"worktrees","path":".","recursive":true,"reason":"Application worktree subtree"}`.
-The helper renders an **absolute directory with a trailing separator** in
-`write(...)`, following the native directory form in
-[github/copilot-cli#285](https://github.com/github/copilot-cli/issues/285).
+The helper renders an **absolute directory followed by the native separator and
+`**`** in `write(...)`. Native Windows CLI 1.0.105 tests rejected both bare
+directory and trailing-separator rules; directory-bounded globstar rules allowed
+nested writes while an unapproved write was denied. The closed
+[github/copilot-cli#285](https://github.com/github/copilot-cli/issues/285) alone
+was not proof that its proposed trailing-separator form worked.
 Future files and generated role/run subdirectories need no filename inventory.
 `recursive` must be a boolean; omit it or use `false` for exact-file requests.
 Recursive evidence grants are rejected so a whole evidence directory cannot
@@ -99,7 +102,7 @@ separately reviewed native sandbox policy and host verification, not just
 access satisfies worktree-only writes. Native sandboxing is not enabled here;
 built-in edits follow its policy only on a best-effort basis, and a Docker
 daemon/cloud API is not confined by an editor path rule. Nested-path matching
-and workflow-agent inheritance still need live native verification; a failure
+and workflow-agent inheritance need live native verification for each supported host/build; a failure
 must remain blocked, never fall back to unrestricted writes or interpreters.
 
 Named PowerShell cmdlets such as `shell(Get-ChildItem)`, JSON converters
@@ -114,7 +117,7 @@ matching distinguishes every nested CLI verb; never fall back to a whole-client
 grant when a specific selector fails.
 
 Explicit execution proposals can also name file-operation commands:
-`New-Item`, `Set-Content`, `Add-Content`, `Copy-Item`, `Move-Item`, `Rename-Item`,
+`Set-Location`, `New-Item`, `Set-Content`, `Add-Content`, `Copy-Item`, `Move-Item`, `Rename-Item`,
 `Remove-Item`, `Out-File`, `mkdir`, `touch`, `cp`, `mv`, `rm`, `rmdir` and `tee`,
 plus the `pytest` runner. These are **not inspection permissions** and are never
 added automatically or included in the starter. Their native rules cannot
@@ -122,6 +125,10 @@ constrain file arguments, recursive deletion, test plugins or invoked project
 code. Scoped `writes` requests apply to editor tools, not these shell commands.
 Keep assigned file ownership, exact cleanup inventories and native controls;
 do not use shell writes to work around a denied editor request.
+On PowerShell, enter the assigned worktree with `Set-Location -LiteralPath`,
+then use ordinary approved Git subcommands. Native CLI 1.0.105 classifies
+`git -C <path> status` with an allow-match identity of `git -C`, which does not
+match the reviewed `git status` grant. Do not solve that by granting whole Git.
 
 For a delivery proposal, review each role separately: writers need only assigned
 file operations and Git publication; Test needs the chosen build/test runners;
@@ -243,7 +250,12 @@ Non-interactive `workflow run` cannot display those prompts. Offline regressions
 verify exact profile arguments at the real runner's mocked child boundary and
 reject an invalid profile before setup. Native help parsing has also been checked.
 Actual workflow-agent inheritance remains a separate live verification; these
-checks do not prove it. The inspection starter still cannot authorize a complete
+checks do not prove it. A native Windows 1.0.105 workflow fixture additionally
+verified the helper-rendered full profile: nested/top-level source edits, exact
+evidence write, selected reference read and cwd/Git checks succeeded; an editor
+write in readable CWD but outside all write grants was denied. This verifies
+those capabilities, not every deployment command, platform or future CLI build.
+The inspection starter still cannot authorize a complete
 Architect stage or guarantee unattended completion.
 
 See [GitHub's CLI usage and approval documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli).

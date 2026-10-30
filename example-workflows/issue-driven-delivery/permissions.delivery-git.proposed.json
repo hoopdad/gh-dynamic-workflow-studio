@@ -282,6 +282,7 @@
     { "pattern": "shell(gh cache list)", "reason": "GitHub Actions cache metadata inspection." },
     { "pattern": "shell(gh extension list)", "reason": "GitHub CLI extension metadata inspection, not execution." },
     { "pattern": "shell(gh status)", "reason": "GitHub status inspection." },
+    { "pattern": "shell(Set-Location)", "reason": "Enter only the assigned application worktree before running approved Git subcommands. Native git -C matching does not use the approved git status/log families; directory/path checks remain separate." },
     { "pattern": "shell(New-Item)", "reason": "Writers: create only Architect-assigned files/directories in the assigned worktree, or assigned run artifacts. This family cannot enforce paths or item types." },
     { "pattern": "shell(Set-Content)", "reason": "Writers: write only assigned source, design, test, IaC or run-artifact files; never credentials, immutable inputs, baselines or harness receipts. Recursive editor writes are proposed for the application worktree subtree; this shell family cannot enforce paths and is not a denied-editor workaround." },
     { "pattern": "shell(Add-Content)", "reason": "Writers: append only to assigned files and run-owned logs; never alter immutable records or renew the model-attempt allowance." },

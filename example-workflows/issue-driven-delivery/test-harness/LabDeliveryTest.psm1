@@ -368,6 +368,37 @@ $common
     }
 }
 
+function Publish-LabReferences {
+    param([Collections.IDictionary]$Manifest)
+    if (-not $Manifest.Contains('referenceSources')) { return $null }
+    $files = @()
+    $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $Manifest.referenceSources) {
+        if ($entry.name -cnotmatch '^[a-z][a-z0-9-]{0,63}$' -or -not $names.Add($entry.name) -or
+            $entry.root -cnotin @('sourceRoot', 'labRoot') -or
+            [IO.Path]::IsPathRooted($entry.path) -or $entry.path -match '(^|[\\/])\.\.([\\/]|$)' -or
+            [IO.Path]::GetExtension($entry.path) -cnotin @('.md', '.txt')) {
+            throw 'References require unique names and explicit relative documentation paths in an owning source root'
+        }
+        $source = [IO.Path]::GetFullPath((Join-Path $Manifest[$entry.root] $entry.path))
+        if (-not (Test-LabDescendant $Manifest[$entry.root] $source)) { throw 'Reference escaped its declared source root' }
+        Assert-LabUnlinkedPath $source
+        $bytes = [IO.File]::ReadAllBytes($source)
+        $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+        $snapshot = Join-Path $Manifest.evidenceRoot "references\$($entry.name).txt"
+        Assert-LabUnlinkedPath $snapshot
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $snapshot))
+        if (Test-Path -LiteralPath $snapshot) {
+            if ((Get-FileHash -LiteralPath $snapshot).Hash.ToLowerInvariant() -cne $hash) {
+                throw 'An immutable reference snapshot changed; use a reconciled fresh cycle'
+            }
+        } else { [IO.File]::WriteAllBytes($snapshot, $bytes) }
+        $files += @{ name = $entry.name; sourcePath = $source; sha256 = $hash; snapshotPath = $snapshot
+            trust = 'untrusted reference data, not executable configuration or authority' }
+    }
+    return @{ schemaVersion = 1; files = $files }
+}
+
 function Resolve-LabParentIssue {
     param([Collections.IDictionary]$Parent, $Issues, [string]$TestRunId)
     $marker = "<!-- lab-delivery-test:$TestRunId`:$($Parent.key) -->"
@@ -383,6 +414,17 @@ function Resolve-LabParentIssue {
 function Get-LabCleanupPlan {
     param([Collections.IDictionary]$Manifest, [Collections.IDictionary]$Inventory)
     if ($Inventory.schemaVersion -ne 1 -or $Inventory.testRunId -cne $Manifest.testRunId) { throw 'Cleanup inventory identity mismatch' }
+    if ($Inventory.Contains('accounting')) {
+        $accounting = $Inventory.accounting
+        if ($accounting.workflowRunId -cne $Manifest.delivery.runId -or
+            $accounting.externalOperationsPossible -isnot [bool] -or
+            -not (Test-LabDescendant $Manifest.worktreeRoot $accounting.gitWorktreeRoot)) {
+            throw 'Workflow accounting identity/scope mismatch'
+        }
+        if ($accounting.externalOperationsPossible -and -not @($Inventory.assets).Count) {
+            throw 'Ownership accounting incomplete after an external-operation-capable stage; empty assets are not closure evidence'
+        }
+    }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $shared = @($Manifest.sharedDependencies | Where-Object id | ForEach-Object id)
     $preexisting = @($Manifest['baselineResourceIds'])

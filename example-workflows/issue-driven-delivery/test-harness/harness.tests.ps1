@@ -123,6 +123,46 @@ Check 'Setup generates exactly three stable ordered immutable parent requirement
         Reject { Resolve-LabParentIssue $parent @($existing) 'offline-123' } 'requirements/state changed'
     }
 }
+Check 'Reference snapshots are explicit, hash-bound, non-executable and immutable' {
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) ("lab-references-" + [guid]::NewGuid().ToString('N'))
+    try {
+        $m = Fixture
+        $m.sourceRoot = Join-Path $temporary 'source'
+        $m.evidenceRoot = Join-Path $temporary 'evidence'
+        [void][IO.Directory]::CreateDirectory($m.sourceRoot)
+        [IO.File]::WriteAllText((Join-Path $m.sourceRoot 'README.md'), 'reference contract')
+        $m.referenceSources = @(@{ name = 'harness-cleanup'; root = 'sourceRoot'; path = 'README.md' })
+        $bundle = Publish-LabReferences $m
+        Equal $bundle.files.Count 1
+        Equal ([IO.File]::ReadAllText($bundle.files[0].snapshotPath)) 'reference contract'
+        Equal $bundle.files[0].sha256 (Get-FileHash -LiteralPath $bundle.files[0].sourcePath).Hash.ToLowerInvariant()
+        Equal (Publish-LabReferences $m) $bundle
+        [IO.File]::WriteAllText((Join-Path $m.sourceRoot 'README.md'), 'changed')
+        Reject { Publish-LabReferences $m } 'immutable'
+        foreach ($path in @('..\foreign.md', '.azure-cli\credentials.json', 'script.ps1')) {
+            $m.referenceSources[0].path = $path
+            Reject { Publish-LabReferences $m } 'explicit relative documentation'
+        }
+    } finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse }
+    }
+}
+Check 'Initial workflow accounting is run-bound and never treats an empty post-development inventory as closure' {
+    $m = Fixture
+    $m.delivery = @{ runId = 'native-run' }
+    $i = @{ schemaVersion = 1; testRunId = $m.testRunId; assets = @()
+        accounting = @{ workflowRunId = 'native-run'; gitWorktreeRoot = (Join-Path $m.worktreeRoot 'native-scope')
+            externalOperationsPossible = $false } }
+    Equal @(Get-LabCleanupPlan $m $i).Count 0
+    $i.accounting.externalOperationsPossible = $true
+    Reject { Get-LabCleanupPlan $m $i } 'empty assets are not closure'
+    $i.accounting.externalOperationsPossible = $false
+    $i.accounting.workflowRunId = 'foreign-run'
+    Reject { Get-LabCleanupPlan $m $i } 'identity/scope'
+    $i.accounting.workflowRunId = 'native-run'
+    $i.accounting.gitWorktreeRoot = $m.worktreeRoot
+    Reject { Get-LabCleanupPlan $m $i } 'identity/scope'
+}
 Check 'Teardown refuses foreign runs, arbitrary types and all shared roots regardless of name prefix' {
     $m = Fixture
     $prefix = "/subscriptions/$($m.subscriptionId)/resourceGroups/test/providers/"
@@ -453,7 +493,7 @@ $profile.writes = @(
 )
 $profile | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $profilePath
 $global:expectedPermissionArguments = @('--allow-tool') + @($profile.tools.pattern) +
-    @("write($($global:fixture.worktreeRoot)$([IO.Path]::DirectorySeparatorChar))",
+    @("write($($global:fixture.worktreeRoot)$([IO.Path]::DirectorySeparatorChar)**)",
         "write($(Join-Path $global:fixture.evidenceRoot 'ownership.json'))") +
     @("--add-dir=$($global:fixture.worktreeRoot)", "--add-dir=$($global:fixture.evidenceRoot)", '--allow-url') +
     @($profile.urls.origin)

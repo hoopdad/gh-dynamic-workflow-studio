@@ -1,12 +1,86 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
+import { link, lstat, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { setTimeout as sleep } from "node:timers/promises";
 import { finished } from "node:stream/promises";
 
 const exec = promisify(execFile);
+
+export async function initializeOwnership(config, runId, worktreeBase, projectRoot = process.cwd()) {
+    if (config === undefined) return null;
+    if (!config || Object.keys(config).sort().join(",") !== "evidenceRoot,testRunId"
+        || !/^[a-z0-9][a-z0-9-]{5,63}$/.test(config.testRunId)
+        || typeof config.evidenceRoot !== "string" || !path.isAbsolute(config.evidenceRoot)
+        || typeof runId !== "string" || !runId) throw new Error("Explicit ownership testRunId and private evidenceRoot required");
+    const root = path.resolve(config.evidenceRoot);
+    const home = path.relative(root, homedir());
+    if (root === path.parse(root).root || !home
+        || (!path.isAbsolute(home) && home !== ".." && !home.startsWith(`..${path.sep}`))) {
+        throw new Error("Filesystem/home roots and their ancestors are not private evidence scopes");
+    }
+    for (const excluded of [projectRoot, worktreeBase]) {
+        const relative = path.relative(path.resolve(excluded), root);
+        const reverse = path.relative(root, path.resolve(excluded));
+        if (!relative || !reverse || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
+            || (!path.isAbsolute(reverse) && reverse !== ".." && !reverse.startsWith(`..${path.sep}`))) {
+            throw new Error("Ownership evidence must be disjoint from checkout and worktrees");
+        }
+    }
+    async function unlinked(file) {
+        for (let current = file;; current = path.dirname(current)) {
+            let entry;
+            try { entry = await lstat(current); } catch (error) { if (error.code !== "ENOENT") throw error; }
+            if (entry?.isSymbolicLink()) throw new Error("Linked ownership path refused");
+            if (entry?.isDirectory()) {
+                try {
+                    await lstat(path.join(current, ".git"));
+                    throw new Error("Ownership evidence must be outside owning checkouts");
+                } catch (error) { if (error.code !== "ENOENT") throw error; }
+            }
+            if (path.dirname(current) === current) break;
+        }
+    }
+    await unlinked(root);
+    if (!(await lstat(root)).isDirectory()) throw new Error("Existing private evidence directory required");
+    const file = path.join(root, "ownership.json");
+    const accounting = {
+        workflowRunId: runId,
+        gitWorktreeRoot: path.join(worktreeBase, createHash("sha256").update(runId).digest("hex").slice(0, 16)),
+        externalOperationsPossible: false,
+    };
+    async function load() {
+        await unlinked(file);
+        const inventory = JSON.parse(await readFile(file, "utf8"));
+        if (inventory.schemaVersion !== 1 || inventory.testRunId !== config.testRunId || !Array.isArray(inventory.assets)
+            || inventory.accounting?.workflowRunId !== runId || inventory.accounting.gitWorktreeRoot !== accounting.gitWorktreeRoot
+            || typeof inventory.accounting.externalOperationsPossible !== "boolean") {
+            throw new Error("Ownership accounting identity/state mismatch; reconcile instead of overwriting");
+        }
+        return inventory;
+    }
+    const temporary = path.join(root, `ownership-${createHash("sha256").update(runId).digest("hex")}.tmp`);
+    await unlinked(file);
+    try { await load(); }
+    catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        await writeFile(temporary, JSON.stringify({ schemaVersion: 1, testRunId: config.testRunId, assets: [], accounting }, null, 2), { flag: "wx" });
+        try { await link(temporary, file); } finally { await unlink(temporary); }
+    }
+    return {
+        async markExternalOperationsPossible() {
+            const inventory = await load();
+            if (inventory.accounting.externalOperationsPossible) return;
+            inventory.accounting.externalOperationsPossible = true;
+            await writeFile(temporary, JSON.stringify(inventory, null, 2), { flag: "wx" });
+            try { await rename(temporary, file); }
+            finally { await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; }); }
+        },
+    };
+}
+
 export function resolveWorktreeRoot(requested, projectRoot = process.cwd()) {
     const root = requested === undefined
         ? path.join(path.dirname(projectRoot), ".delivery-worktrees", path.basename(projectRoot))
@@ -26,7 +100,7 @@ export function resolveWorktreeRoot(requested, projectRoot = process.cwd()) {
 
 export const roles = ["Web", "API", "Infrastructure", "Agent", "Test", "DevOps"];
 const designerRole = "UI/UX Designer";
-const findingOwners = [...roles, designerRole];
+const findingOwners = [...roles, designerRole, "Architect"];
 const isSha = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const string = { type: "string" };
 const strings = { type: "array", items: string };
@@ -131,6 +205,7 @@ export function validatePlan(plan, issue, requirements) {
 export async function requestPlan(request, issue, requirements) {
     let plan = await request(0);
     for (let attempt = 0; ; attempt++) {
+        if (plan?.status === "blocked" && typeof plan.summary === "string" && plan.summary.trim()) return plan;
         try {
             return validatePlan(plan, issue, requirements);
         } catch (error) {
@@ -152,6 +227,7 @@ export function validateReport(report, plan, sha) {
     for (const finding of report.findings) {
         if ((!ids.has(finding.requirementId) && finding.requirementId !== "DELIVERY")
             || !findingOwners.includes(finding.owner)
+            || (finding.owner === "Architect" && finding.requirementId !== "DELIVERY")
             || (finding.owner === designerRole && !plan.uiUx.enabled)
             || ["check", "expected", "actual", "evidence"].some((key) => !finding[key].trim())) {
             throw new Error("Finding must cite an existing requirement and reproducible evidence");
@@ -415,7 +491,11 @@ Missing externally managed authorization, identity, network or host-trust prereq
 Include the failed operation, principal ID (or explicitly unavailable), exact resource scope, native error,
 correlation/request ID (or explicitly unavailable), attempted checks and the specific operator fix.
 Do not silently self-grant, change externally managed trust/network/authentication settings or blindly retry access failures.
-The workflow publishes the blocker and returns it to the operator; do not claim a separate alert was sent.`;
+The workflow publishes the blocker and returns it to the operator; do not claim a separate alert was sent.
+Where private ownership accounting is configured, the runtime initializes it before agents. Preserve its
+accounting identity/markers and all existing assets when publishing updates; never replace it with an empty ledger.
+Before any external mutation, publish its exact planned ownership and pinned cleanup procedure using the project's
+protocol. An empty inventory after an implementation-capable stage is incomplete accounting, not cleanup proof.`;
 
 const transportRules = `If the project requires an existing owner-managed private transport, DevOps owns
 an application-side registration/handoff packet in its assigned files, not a second transport implementation.
@@ -431,6 +511,8 @@ tunnel, wildcard forwarding, new keys, RBAC/network/trust repair or automatic VM
 
 const writerRules = `Use ONLY your assigned isolated git worktree, never the main checkout or another agent's
 worktree/index. Create it from the supplied remote candidate; on replay, inspect/reuse only your own work.
+On PowerShell, use Set-Location -LiteralPath to enter that worktree, then ordinary git subcommands.
+Do not put -C before Git subcommands: native approval may classify them as git -C instead.
 Stage exact owned paths (never git add .). Check the staged path list against your assignment.
 Commit your work with Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>.
 Push your own commits to the SAME remote feature branch. Others push concurrently: fetch the branch,
@@ -455,6 +537,7 @@ export const deliveryWorkflow = {
             maxRounds: { type: "integer", description: "Optional explicit repair-round cap; omitted means no round limit." },
             maxDeploymentAttempts: { type: "integer" },
             reviewPolls: { type: "integer" },
+            ownership: object({ testRunId: string, evidenceRoot: string }),
         }),
     },
     run: (ctx) => runDelivery(ctx),
@@ -476,6 +559,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         || [maxDeploymentAttempts, reviewPolls].some((n) => !Number.isSafeInteger(n) || n < 1)) {
         throw new Error("Supply an explicit deploymentTarget, nonempty readyLabel and positive integer budgets");
     }
+    const ownership = await initializeOwnership(ctx.args.ownership, ctx.runId, worktreeBase);
     const repo = await ctx.step("v3:repository", () => io.repository());
     const stack = stackAfter ? await ctx.step("v3:initial-stack",
         () => loadStack(io, stackAfter, repo.defaultBranchRef.name)) : [];
@@ -500,7 +584,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         const result = await ctx.step(`v3:delivery:${issue.number}`, async () => {
             await io.verifyNativeStack(stack, position === 0 ? issueNumber : issue.number);
             const delivered = await runIssue(ctx, io, {
-                repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls,
+                repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls, ownership,
             });
             if (delivered.status !== "ready") return delivered;
             const nextStack = [...stack, delivered];
@@ -518,7 +602,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
     }
 }
 
-async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls }) {
+async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls, ownership }) {
     const step = (key, producer) => ctx.step(`v3:issue:${issue.number}:${key}`, producer);
     const branch = `feature/issue-${issue.number}`;
     const label = `delivery:issue-${issue.number}`;
@@ -583,6 +667,11 @@ DevOps writes the project's required provisioning/deployment implementation and 
 CI/deploy/rollback tooling, honoring the project's preference for GitHub Actions OR local scripts/tools.
 Derive prerequisites from explicit project/issue requirements and dependency constraints.
 Do not introduce a competing delivery stack or assume a universal set of deployment technologies.
+Nullable resource IDs and unresolved environment metadata are investigation tasks, not by themselves
+evidence of failed authorization or ambiguous application scope. Publish fixed interfaces and a conditional
+delivery design within the stated requirements; assign verification/discovery to DevOps in its existing role.
+Do not invent resource IDs, relax existing-resource reuse, or require the supervisor to provision prerequisites.
+DevOps must verify the actual dependencies and report evidenced external blockers before deployment.
 When the target needs owner-managed private transport, identify its approved launcher/extension contract
 and assign its application-side registration packet to DevOps. Do not assign owner-repository edits implicitly.
 ${transportRules}
@@ -605,11 +694,22 @@ including indentation (CRLF/LF differences are allowed). Preserve IDs referenced
 Do not add scope or alter any other plan fields.`, requirementsSchema);
         }, issue, requirements));
     }
+    async function blockedDesign(summary) {
+        const report = { status: "blocked", sha: baseSha, summary,
+            evidence: [`Workflow ${ctx.runId}: ${summary}`],
+            findings: [{ requirementId: "DELIVERY", owner: "Architect", check: "Architecture publication",
+                expected: "A published design within existing scope and authorization", actual: summary,
+                evidence: `Workflow ${ctx.runId}: ${summary}` }] };
+        await io.file(repo.nameWithOwner, label, issue.number, branch, "design", report.findings[0]);
+        return blocked(summary, report);
+    }
     for (let round = 1; maxRounds === undefined || round <= maxRounds; round++) {
         ctx.phase("Design");
         const initialPlan = await designPlan(1);
+        if (initialPlan.status === "blocked") return blockedDesign(initialPlan.summary);
         const requirements = initialPlan.requirements;
         plan = round === 1 ? initialPlan : await designPlan(round, requirements);
+        if (plan.status === "blocked") return blockedDesign(plan.summary);
         if (!plan.uiUx.enabled && (uiUxSelected || outstanding.some((item) =>
             item.body?.includes("\nStage: ui-ux\n") || item.body?.includes("\nOwner: UI/UX Designer\n")))) {
             return blocked("UI/UX design cannot be skipped after selection or while designer repair issues remain");
@@ -618,6 +718,8 @@ Do not add scope or alter any other plan fields.`, requirementsSchema);
         await io.ancestor(plan.sha, await io.head(branch));
         await io.ancestor(baseSha, plan.sha);
         if (!(await io.design(plan.sha, plan.designFile)).trim()) return blocked("Published design document is empty");
+        await reconcile("design", { status: "pass", sha: plan.sha, summary: "Published architecture verified",
+            evidence: [`${plan.sha}:${plan.designFile}`], findings: [] });
         let developmentSha = plan.sha;
         let uiUxHandoff = "Architect skipped UI/UX design: " + plan.uiUx.reason;
         if (plan.uiUx.enabled) {
@@ -652,6 +754,7 @@ replanning; never silently diverge. Only the UI/UX Designer may edit these artif
             }
         }
         ctx.phase("Develop");
+        await ownership?.markExternalOperationsPossible();
         const active = plan.assignments.filter((assignment) => assignment.files.length);
         const reports = await ctx.parallel(active.map((assignment) => async () => {
             const report = await agent(assignment.role, `${round}:develop`, `${writerRules}
