@@ -235,6 +235,9 @@ function Get-LabResetPlan {
             -not (Test-LabDescendant $Manifest.repositoryRoot (Join-Path $Manifest.repositoryRoot $file.path)) -or
             $file.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw "Unsafe reset file: $($file.path)" }
         Assert-LabUnlinkedPath (Join-Path $Manifest.repositoryRoot $file.path)
+        if ($file.path -match '\.tfstate(\.backup)?$') {
+            throw 'State-bearing reset candidate must be reconciled by its original deployment owner'
+        }
         $plan += @{ kind = 'file'; path = $file.path; sha256 = $file.sha256 }
     }
     foreach ($tree in $Manifest.previous.worktrees) {

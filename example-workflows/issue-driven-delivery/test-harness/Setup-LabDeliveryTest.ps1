@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory)][string]$TestRunId,
     [Parameter(Mandatory)][string]$ManifestPath,
     [ValidateSet('Inspect', 'Apply')][string]$Mode = 'Inspect',
-    [ValidateSet('Inventory', 'Reset', 'Bootstrap', 'Issues')][string]$Stage = 'Inventory',
+    [ValidateSet('Inventory', 'Reset', 'Bootstrap', 'Issues', 'Preflight')][string]$Stage = 'Inventory',
     [string]$ConfigurationPath
 )
 Set-StrictMode -Version Latest
@@ -54,7 +54,10 @@ try {
             if ($ref.name -cne $manifest.defaultBranch) { $branches += @{ name = $ref.name; sha = $ref.commit.sha; remote = $true } }
         }
         $files = @()
-        $names = Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'ls-files', '-co', '--exclude-standard', '-z')
+        $names = @(
+            Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'ls-files', '-co', '--exclude-standard', '-z')
+            Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z')
+        ) -join [char]0
         foreach ($name in @($names.Split([char]0) | Where-Object { $_ } | Sort-Object -Unique)) {
             $file = Join-Path $manifest.repositoryRoot $name
             Assert-LabUnlinkedPath $file
@@ -118,8 +121,13 @@ try {
     }
 
     if (-not $manifest.Contains('inventoryPath')) { throw 'Capture the private baseline first' }
+    if ($Stage -eq 'Preflight') {
+        [void](Assert-LabQuiescent $manifest -CurrentRunOnly)
+        $shared = @(Assert-LabPrerequisites $manifest)
+        @{ stage = $Stage; status = 'ready'; shared = $shared; deploymentStarted = $false } | ConvertTo-Json -Depth 30
+        return
+    }
     [void](Assert-LabQuiescent $manifest)
-    [void](Assert-LabPrerequisites $manifest)
     if ($Stage -eq 'Reset') {
         $plan = @(Get-LabResetPlan $manifest)
         if ($manifest.stages.reset) {

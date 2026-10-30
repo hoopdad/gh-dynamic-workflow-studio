@@ -66,6 +66,15 @@ Check 'Reset fails closed on unknown Azure ownership, missing diagnostics, activ
     $m.previous.pullRequests = @(@{ number = 4 })
     Reject { Get-LabResetPlan $m } 'dependent PR'
 }
+Check 'Reset scopes ignored diagnostic leaves and refuses deployment state' {
+    $m = Fixture
+    $m.previous.files = @(@{ path = '.delivery/workflow.log'; sha256 = ('c' * 64) })
+    Equal @(Get-LabResetPlan $m).Count 1
+    foreach ($path in @('infra/terraform.tfstate', '.terraform/terraform.tfstate', 'infra/terraform.tfstate.backup')) {
+        $m.previous.files[0].path = $path
+        Reject { Get-LabResetPlan $m } 'original deployment owner'
+    }
+}
 Check 'Reset never removes the worktree parent/default branch or accepts a moved identity' {
     $m = Fixture
     foreach ($unsafe in @($m.worktreeRoot, $m.repositoryRoot, (Join-Path $m.worktreeRoot '..\other'))) {
@@ -204,5 +213,58 @@ Check 'Shared-baseline comparison ignores dictionary serialization order but det
     Equal (ConvertTo-LabCanonicalJson $before) (ConvertTo-LabCanonicalJson $after)
     $after[0].configuration.publicNetworkAccess = 'Enabled'
     if ((ConvertTo-LabCanonicalJson $before) -ceq (ConvertTo-LabCanonicalJson $after)) { throw 'Shared drift was hidden' }
+}
+Check 'Repository preparation runs without deployment services while explicit preflight still checks them' {
+    $m = Fixture
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-preflight-$([guid]::NewGuid().ToString('N'))"
+    $m.evidenceRoot = $temporary
+    $m.inventoryPath = Join-Path $temporary 'baseline.json'
+    $m.stages = @{ reset = $false; bootstrap = $false; issues = $false }
+    $m.delivery = @{ started = $false }
+    $m.runtimeHashes = @{}
+    $manifestPath = Join-Path $temporary 'manifest.json'
+    $setup = Join-Path $PSScriptRoot 'Setup-LabDeliveryTest.ps1'
+    $global:labStageFixture = $m
+    function global:git {
+        $global:LASTEXITCODE = 0
+        $arguments = @($args)
+        if ($arguments -contains '--show-toplevel') { return $global:labStageFixture.repositoryRoot }
+        if ($arguments -contains 'get-url') { return "https://github.com/$($global:labStageFixture.repository).git" }
+        if ($arguments -contains 'HEAD') {
+            if ($arguments -contains $global:labStageFixture.sourceRoot) { return $global:labStageFixture.sourceRevision }
+            return $global:labStageFixture.previous.baselineSha
+        }
+        if ($arguments -contains '--show-current') { return 'main' }
+        if ($arguments -contains 'status' -or $arguments -contains 'ls-files') { return '' }
+        throw 'Unexpected offline Git operation'
+    }
+    function global:gh {
+        $global:LASTEXITCODE = 0
+        if (($args -join ' ') -notmatch '^repo view ') { throw 'Unexpected offline GitHub operation' }
+        return @{ nameWithOwner = $global:labStageFixture.repository; isPrivate = $true
+            defaultBranchRef = @{ name = 'main' } } | ConvertTo-Json
+    }
+    function global:node {
+        $global:LASTEXITCODE = 0
+        return '{"runs":[],"warnings":[]}'
+    }
+    function global:az { throw 'Deployment-only prerequisite invoked' }
+    function global:docker { throw 'Deployment-only prerequisite invoked' }
+    try {
+        Write-LabJson $manifestPath $m
+        Equal ((& $setup -TestRunId $m.testRunId -ManifestPath $manifestPath -Stage Reset | ConvertFrom-Json).stage) 'Reset'
+        $m.stages.reset = $true
+        Write-LabJson $manifestPath $m
+        Equal ((& $setup -TestRunId $m.testRunId -ManifestPath $manifestPath -Stage Bootstrap | ConvertFrom-Json).stage) 'Bootstrap'
+        $m.stages.bootstrap = $true
+        Write-LabJson $manifestPath $m
+        Equal ((& $setup -TestRunId $m.testRunId -ManifestPath $manifestPath -Stage Issues | ConvertFrom-Json).initialParentCount) 3
+        Reject { & $setup -TestRunId $m.testRunId -ManifestPath $manifestPath -Stage Preflight } 'Deployment-only prerequisite invoked'
+    } finally {
+        foreach ($name in @('git', 'gh', 'node', 'az', 'docker')) { Remove-Item -LiteralPath "Function:\global:$name" }
+        Remove-Variable -Name labStageFixture -Scope Global
+        if (Test-Path -LiteralPath $manifestPath) { Remove-Item -LiteralPath $manifestPath }
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary }
+    }
 }
 Write-Output "$script:passed offline harness checks passed; no external commands or mutations executed."

@@ -87,7 +87,10 @@ Repair rounds have no implicit cap; `maxRounds` is an explicit opt-in limit.
 `test-harness/Setup-LabDeliveryTest.ps1` and `Teardown-LabDeliveryTest.ps1`
 share explicit run/private-manifest identity and exact inventories.
 Setup separates inventory/reset/bootstrap/three-parent creation; no app build
-or automatic workflow launch. Teardown requires a workflow-delivered pinned
+or automatic workflow launch. Explicit read-only `Preflight` gates delivery
+dependencies without coupling them to independently safe repository setup.
+Old ownership/process/state gates still apply to reset.
+Teardown requires a workflow-delivered pinned
 owner procedure and exact mutation/readback inventory, preserves shared roots
 and fails closed on unknown ownership/closure. `LabDeliveryTest.psm1` owns
 scope guards; `observe-runs.mjs` reuses Studio's read-only store, not runtime
@@ -102,3 +105,7 @@ no legacy-run migration, delivery-policy or Studio-runtime changes.
 Added `test-harness/` lifecycle scripts, shared guards, run observer, README and
 offline tests. Run `node --test example-workflows\issue-driven-delivery\test-harness\harness.test.mjs`
 alongside the two example suites; root Studio test/check commands are unchanged.
+2026-10-30: reviewed from `9af7762` for delivery-only `Preflight`, ignored-leaf
+inventory and state-bearing reset refusal. No paths added/deleted; the runtime
+payload is unchanged. Fifteen offline harness checks cover stage isolation and
+the retained ownership/closure gates.

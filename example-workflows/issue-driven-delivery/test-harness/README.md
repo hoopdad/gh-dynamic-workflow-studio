@@ -57,7 +57,9 @@ for each role: `foundryAccount`, `foundryProject`, `modelDeployment`, `vnet`,
 `appInsights`, `logAnalytics`, `keyVault`, `storage`. An optional `registry` is
 also reusable. Each entry has `role`, exact ARM `id`, `type`, `apiVersion`,
 `ownerSource` (source path/revision), and `intendedUse`. A missing `id` is allowed
-for inventory/reporting, but blocks all destructive setup stages. Verify current
+for inventory and ownership-reconciled repository setup, but blocks delivery
+preflight. Repository reset never depends on model/telemetry availability; its
+old ownership, state, process and diagnostic gates remain mandatory. Verify current
 provisioning, endpoint, permissions, model suitability and subnet delegations
 independently; a selected resource ID alone proves none of these.
 
@@ -99,8 +101,12 @@ silently close/merge/restack them.
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Reset -Mode Apply
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Bootstrap -Mode Apply
 & "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Issues -Mode Apply
+& "$harness\Setup-LabDeliveryTest.ps1" -TestRunId $run -ManifestPath $manifest -Stage Preflight
 ```
 
+Inventory includes ignored diagnostic leaves, not only tracked/untracked files;
+preserve their sanitized terminal evidence before reset. State-bearing leaves
+must be reconciled through the original deployment owner, never deleted by reset.
 Reset uses enumerated leaf removals, normal commits and exact disposable worktree/
 branch/issue identities. It never removes a checkout, `.git`, shared parent,
 default branch or session root, rewrites history or force-pushes. Bootstrap
@@ -112,7 +118,8 @@ It commits/pushes the queue normally; it does not launch delivery.
 Partial failures are retained, never silently retried. Re-inspect before rerunning;
 identity/HEAD drift requires explicit reconciliation, not an automatic reset.
 
-In a Copilot session scoped to the target, verify workflow registration and both
+Preflight must pass before delivery. In a Copilot session scoped to the target,
+verify workflow registration and both
 installed file hashes. Confirm actual Docker builds/registry transport, private
 connectivity and durable attempt accounting before invoking **one** workflow using
 the current supported CLI interface:
