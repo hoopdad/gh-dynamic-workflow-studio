@@ -223,3 +223,7 @@ identified path checks against a not-yet-created worktree, distinct from tool
 matching. Added only named Write-Output for observed console/hash evidence;
 no interpreter, Git-family or directory expansion. Existing colocated tests
 cover the updated prompt/proposal contract; no paths or dependencies changed.
+Cycle 05 then published its design and verified scoped teardown, but its plan
+used Windows separators and failed existing exact-path validation. Plan schema
+descriptions/prompts now distinguish forward-slash Git ownership identifiers
+from native Windows filesystem paths; validation/ownership guards are unchanged.

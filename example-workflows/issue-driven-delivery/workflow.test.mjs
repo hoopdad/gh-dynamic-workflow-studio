@@ -217,6 +217,10 @@ test("literal delivery flow fans out all six writers, then gates deployment, E2E
     const f = fixture();
     const original = f.ctx.agent;
     f.ctx.agent = async (prompt, options) => {
+        if (options.label.includes(":design:")) {
+            assert.match(prompt, /Git repository-relative identifiers with forward/);
+            assert.match(prompt, /Use native Windows paths for actual filesystem commands/);
+        }
         if (!options.label.includes(":develop:")) return original(prompt, options);
         active++;
         peak = Math.max(peak, active);

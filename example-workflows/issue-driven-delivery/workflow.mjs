@@ -104,6 +104,7 @@ const findingOwners = [...roles, designerRole, "Architect"];
 const isSha = (value) => typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const string = { type: "string" };
 const strings = { type: "array", items: string };
+const repositoryPath = { type: "string", description: "Exact Git repository-relative identifier with forward-slash separators, not a Windows filesystem path." };
 const object = (properties) => ({ type: "object", properties, required: Object.keys(properties) });
 const array = (items) => ({ type: "array", items });
 const findingSchema = object({
@@ -116,13 +117,13 @@ const reportSchema = object({
 });
 const planSchema = object({
     status: { type: "string", enum: ["ready", "blocked"] }, summary: string,
-    sha: string, designFile: string,
+    sha: string, designFile: repositoryPath,
     requirements: array(object({ id: string, text: string })),
     uiUx: object({
-        enabled: { type: "boolean" }, reason: string, task: string, files: strings, requirementIds: strings,
+        enabled: { type: "boolean" }, reason: string, task: string, files: array(repositoryPath), requirementIds: strings,
     }),
     assignments: array(object({
-        role: { type: "string", enum: roles }, task: string, files: strings, requirementIds: strings,
+        role: { type: "string", enum: roles }, task: string, files: array(repositoryPath), requirementIds: strings,
     })),
 });
 
@@ -655,6 +656,9 @@ Identify every affected tier, folder and exact existing/new file, contracts, dep
 test commands and deploy/rollback commands. Quote explicit parent requirements verbatim with stable IDs.
 Assign disjoint exact file sets to ALL six roles, including shared contracts, manifests, lockfiles, generated
 files, test fixtures and delivery scripts. You own only the design document. No other overlapping writers.
+In the plan JSON, designFile and every files entry are Git repository-relative identifiers with forward
+slashes, for example "docs/design.md", NOT Windows filesystem paths. This includes uiUx.files and every
+assignment.files. Use native Windows paths for actual filesystem commands, not for these Git identifiers.
 Assign required provisioning/IaC files exclusively to DevOps, including Terraform where required.
 Infrastructure owns only distinct non-provisioning work; use files:[] with a reason if none exists.
 Decide per issue whether UI/UX design is needed before Web implementation. Return uiUx with enabled and
