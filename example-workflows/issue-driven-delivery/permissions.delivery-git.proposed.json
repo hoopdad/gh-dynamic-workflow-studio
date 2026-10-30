@@ -24,6 +24,7 @@
     { "pattern": "shell(Get-Content)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Item)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Location)", "reason": "PowerShell inspection." },
+    { "pattern": "shell(Write-Output)", "reason": "Emit hash-verification and command evidence to stdout. Does not grant file writes or shell redirection." },
     { "pattern": "shell(Get-FileHash)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Command)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Module)", "reason": "PowerShell inspection." },

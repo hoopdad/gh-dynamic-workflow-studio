@@ -215,3 +215,11 @@ route to DevOps, not supervisor provisioning or a new readiness phase.
 No paths added/deleted, new dependency or installer payload change. Colocated
 example suites include native-pattern, initial-accounting, blocked-design and
 reference regressions; the PowerShell wrapper now covers 25 offline checks.
+
+2026-10-30: reviewed from `7ad567b` for cycle-05 native follow-up. Writer prompts
+require separate successful worktree creation before cwd/read operations and
+fail-fast Set-Location plus exact Git toplevel verification. Native evidence
+identified path checks against a not-yet-created worktree, distinct from tool
+matching. Added only named Write-Output for observed console/hash evidence;
+no interpreter, Git-family or directory expansion. Existing colocated tests
+cover the updated prompt/proposal contract; no paths or dependencies changed.

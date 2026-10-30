@@ -108,6 +108,7 @@ must remain blocked, never fall back to unrestricted writes or interpreters.
 Named PowerShell cmdlets such as `shell(Get-ChildItem)`, JSON converters
 `shell(ConvertTo-Json)` / `shell(ConvertFrom-Json)`, and Unix utilities such
 as `shell(ls)` are supported through an explicit inspection-command list.
+`shell(Write-Output)` emits console evidence; it does not grant file redirection.
 This does not approve `powershell`, `pwsh`, `bash`, `sh` or arbitrary scripts.
 There is no universal "every read-only command" rule: plugins and versions vary,
 and options/configuration can change side effects. Generic `gh api`, secret/token
@@ -126,7 +127,11 @@ code. Scoped `writes` requests apply to editor tools, not these shell commands.
 Keep assigned file ownership, exact cleanup inventories and native controls;
 do not use shell writes to work around a denied editor request.
 On PowerShell, enter the assigned worktree with `Set-Location -LiteralPath`,
-then use ordinary approved Git subcommands. Native CLI 1.0.105 classifies
+with `-ErrorAction Stop`, then verify the exact Git toplevel and use ordinary
+approved Git subcommands. Create a new worktree in a separate completed tool call
+before entering/reading it; native path approval can reject references into a
+not-yet-created worktree even when its parent is allowed.
+Native CLI 1.0.105 classifies
 `git -C <path> status` with an allow-match identity of `git -C`, which does not
 match the reviewed `git status` grant. Do not solve that by granting whole Git.
 

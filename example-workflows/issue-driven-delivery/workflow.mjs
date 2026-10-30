@@ -511,7 +511,11 @@ tunnel, wildcard forwarding, new keys, RBAC/network/trust repair or automatic VM
 
 const writerRules = `Use ONLY your assigned isolated git worktree, never the main checkout or another agent's
 worktree/index. Create it from the supplied remote candidate; on replay, inspect/reuse only your own work.
-On PowerShell, use Set-Location -LiteralPath to enter that worktree, then ordinary git subcommands.
+Create/reuse the worktree in a separate tool call BEFORE changing directory or inspecting paths inside it.
+Do not batch worktree creation with Set-Location or subsequent reads: native path checks cannot resolve the
+not-yet-created directory. Verify creation succeeded, then use a new tool call for inspection/publication.
+On PowerShell, use Set-Location -LiteralPath with -ErrorAction Stop to enter that worktree, then ordinary git subcommands.
+Verify git rev-parse --show-toplevel equals the assigned worktree before editing, staging or committing.
 Do not put -C before Git subcommands: native approval may classify them as git -C instead.
 Stage exact owned paths (never git add .). Check the staged path list against your assignment.
 Commit your work with Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>.

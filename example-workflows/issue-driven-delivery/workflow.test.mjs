@@ -225,6 +225,9 @@ test("literal delivery flow fans out all six writers, then gates deployment, E2E
         active--;
         assert.match(prompt, /SAME remote feature branch/);
         assert.match(prompt, /never the main checkout/);
+        assert.match(prompt, /separate tool call BEFORE changing directory/);
+        assert.match(prompt, /Set-Location -LiteralPath with -ErrorAction Stop/);
+        assert.match(prompt, /git rev-parse --show-toplevel equals the assigned worktree/);
         return result;
     };
     const result = await f.run();

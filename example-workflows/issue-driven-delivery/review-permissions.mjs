@@ -8,7 +8,7 @@ const rootNames = ["workspace", "worktrees", "evidence"];
 const interpreters = new Set(["sh", "bash", "dash", "zsh", "ksh", "fish", "cmd", "pwsh", "powershell", "python", "node", "nodejs",
     "perl", "ruby", "php", "lua", "deno", "bun", "wsl", "env", "sudo", "runas", "eval", "exec", "source", "call", "invoke-expression", "iex"]);
 const inspectionCommands = new Set([
-    "get-childitem", "get-content", "get-item", "get-location", "get-filehash", "get-command", "get-module", "get-psdrive",
+    "get-childitem", "get-content", "get-item", "get-location", "write-output", "get-filehash", "get-command", "get-module", "get-psdrive",
     "get-psprovider", "get-process", "get-service", "get-netadapter", "get-netipaddress", "get-netipconfiguration",
     "get-netroute", "get-nettcpconnection", "get-netudpendpoint", "get-dnsclient", "get-dnsclientserveraddress",
     "resolve-dnsname", "test-path", "resolve-path", "select-string", "compare-object", "measure-object", "get-date",
