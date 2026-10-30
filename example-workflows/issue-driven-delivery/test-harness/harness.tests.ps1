@@ -393,4 +393,135 @@ $global:labCycleTrace.Add('teardown')
         Remove-Item -LiteralPath $temporary -Recurse -Force
     }
 }
+foreach ($scenario in @('success', 'execution-failure')) {
+    Check "Real staged setup and teardown retain helpers in a fresh process ($scenario)" {
+        $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-real-cycle-$([guid]::NewGuid().ToString('N'))"
+        $harness = Join-Path $temporary 'harness'
+        $m = Fixture
+        $m.repositoryRoot = Join-Path $temporary 'application'
+        $m.evidenceRoot = Join-Path $temporary 'evidence'
+        $installed = Join-Path $m.repositoryRoot '.github\extensions\issue-driven-delivery'
+        [void][IO.Directory]::CreateDirectory($harness)
+        [void][IO.Directory]::CreateDirectory($installed)
+        try {
+            foreach ($name in @('Invoke-LabDeliveryTest.ps1', 'Setup-LabDeliveryTest.ps1',
+                'Teardown-LabDeliveryTest.ps1', 'LabDeliveryTest.psm1', 'observe-runs.mjs')) {
+                Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $harness $name)
+            }
+            foreach ($name in @('extension.mjs', 'workflow.mjs')) {
+                Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\$name") -Destination (Join-Path $installed $name)
+            }
+            $m.runtimeHashes = Get-LabRuntimeHashes $installed
+            $m.deploymentTarget = 'offline-note'
+            $m.sharedDependencies = @()
+            $m.inventoryPath = Join-Path $m.evidenceRoot 'baseline.json'
+            $m.stages = @{ reset = $true; bootstrap = $true; issues = $true }
+            $m.resetCommit = $m.previous.baselineSha
+            $m.delivery = @{ started = $false; stopped = $true
+                ownershipPath = (Join-Path $m.evidenceRoot 'ownership.json') }
+            $manifestPath = Join-Path $m.evidenceRoot 'manifest.json'
+            Write-LabJson $manifestPath $m
+            Write-LabJson $m.inventoryPath @{ runs = @{ runs = @() }; shared = @() }
+            $number = 100
+            $parents = @(Get-LabParentIssues $m.testRunId | ForEach-Object {
+                $number++
+                @{ number = $number; title = $_.title; body = $_.body; state = 'OPEN'
+                    url = "https://github.com/$($m.repository)/issues/$number"; createdAt = '2026-10-30T12:00:00Z' }
+            })
+            Write-LabJson (Join-Path $m.evidenceRoot 'parents.json') $parents
+            $controller = Join-Path $temporary 'run-fixture.ps1'
+            [IO.File]::WriteAllText($controller, @'
+param($Harness, $ManifestPath, $Scenario)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+if (Get-Module LabDeliveryTest) { throw 'Fixture must not preload the shared module' }
+$global:fixture = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable
+$global:parents = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'parents.json') -Raw |
+    ConvertFrom-Json -AsHashtable
+$global:scenario = $Scenario
+$global:invocations = 0
+function global:git {
+    $global:LASTEXITCODE = 0
+    if ($args -contains '--show-toplevel') { return $global:fixture.repositoryRoot }
+    if ($args -contains 'get-url') { return "https://github.com/$($global:fixture.repository).git" }
+    if ($args -contains 'HEAD') { return $global:fixture.sourceRevision }
+    if ($args -contains 'status' -or $args -contains 'add' -or $args -contains 'diff' -or $args -contains 'push') { return '' }
+    throw "Unexpected fixture Git operation: $args"
+}
+function global:gh {
+    $global:LASTEXITCODE = 0
+    switch -Regex ($args -join ' ') {
+        '^repo view ' {
+            return @{ nameWithOwner = $global:fixture.repository; isPrivate = $true
+                defaultBranchRef = @{ name = 'main' } } | ConvertTo-Json
+        }
+        '^label list ' { return '[{"name":"workflow:ready"}]' }
+        '^issue list ' { return ConvertTo-Json -InputObject $global:parents -Depth 20 }
+        default { throw "Unexpected fixture GitHub operation: $args" }
+    }
+}
+function global:node {
+    $global:LASTEXITCODE = 0
+    if (-not ([string]$args[0]).EndsWith('observe-runs.mjs')) { throw 'Unexpected fixture Node operation' }
+    $runs = @()
+    if ($global:invocations) {
+        $runs = @(@{ sessionId = 'fixture-session'; runId = 'fixture-run'
+            status = $(if ($global:scenario -eq 'success') { 'completed' } else { 'error' }) })
+    }
+    return @{ runs = $runs; warnings = @() } | ConvertTo-Json -Depth 5
+}
+function global:az {
+    $global:LASTEXITCODE = 0
+    if (($args -join ' ') -notmatch '^account show ') { throw 'Unexpected fixture Azure operation' }
+    return @{ subscription = $global:fixture.subscriptionId; tenant = $global:fixture.tenantId
+        state = 'Enabled' } | ConvertTo-Json
+}
+function global:copilot {
+    $global:invocations++
+    if ($global:invocations -ne 1 -or $args -notcontains 'issue-driven-delivery') {
+        throw 'Unexpected fixture workflow invocation'
+    }
+    @{ schemaVersion = 1; testRunId = $global:fixture.testRunId; assets = @() } |
+        ConvertTo-Json | Set-Content -LiteralPath $global:fixture.delivery.ownershipPath
+    $global:LASTEXITCODE = 7
+    if ($global:scenario -eq 'success') {
+        $resultPath = $args[[Array]::IndexOf($args, '--result-file') + 1]
+        '{"status":"done"}' | Set-Content -LiteralPath $resultPath
+        $global:LASTEXITCODE = 0
+    }
+}
+$failure = $null
+try {
+    & (Join-Path $Harness 'Invoke-LabDeliveryTest.ps1') -TestRunId $global:fixture.testRunId `
+        -ManifestPath $ManifestPath -Mode Apply | Out-Null
+} catch { $failure = $_.Exception.Message }
+$receipt = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'lifecycle-receipt.json') -Raw |
+    ConvertFrom-Json -AsHashtable
+if ($global:invocations -ne 1) { throw "Workflow not invoked exactly once: $($receipt | ConvertTo-Json -Depth 10)" }
+$cleanup = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'cycle-teardown-receipt.json') -Raw |
+    ConvertFrom-Json -AsHashtable
+if ($receipt.setup -cne 'passed' -or $receipt.teardown -cne 'passed' -or $cleanup.status -cne 'verified') {
+    throw "Real stage failure: $($receipt | ConvertTo-Json -Depth 10)"
+}
+$saved = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable
+if ($saved.delivery.runId -cne 'fixture-run' -or -not $saved.delivery.stopped) {
+    throw 'Native observation did not retain the stopped run identity'
+}
+if ($Scenario -eq 'success') {
+    if ($failure -or $receipt.status -cne 'passed' -or $receipt.execution -cne 'passed' -or $receipt.errors.Count) {
+        throw 'Successful real-stage fixture did not pass'
+    }
+} elseif (-not $failure -or $receipt.status -cne 'failed' -or $saved.delivery.exitCode -ne 7 -or
+    $receipt.execution -cne 'failed' -or $receipt.errors.Count -ne 1 -or
+    $receipt.errors[0].stage -cne 'execution' -or $receipt.errors[0].message -notmatch 'exit 7') {
+    throw 'Execution failure or successful cleanup was not retained'
+}
+'@)
+            $output = & pwsh -NoProfile -File $controller -Harness $harness -ManifestPath $manifestPath -Scenario $scenario 2>&1
+            if ($LASTEXITCODE -ne 0) { throw ($output -join "`n") }
+        } finally {
+            Remove-Item -LiteralPath $temporary -Recurse -Force
+        }
+    }
+}
 Write-Output "$script:passed offline harness checks passed; no external commands or mutations executed."

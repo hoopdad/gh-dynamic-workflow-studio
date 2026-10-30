@@ -7,7 +7,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'LabDeliveryTest.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot 'LabDeliveryTest.psm1') -DisableNameChecking
 $manifest = Read-LabManifest $TestRunId $ManifestPath
 $lock = $null
 $oldAzure = $env:AZURE_CONFIG_DIR

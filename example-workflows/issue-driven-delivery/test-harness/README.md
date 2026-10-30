@@ -263,6 +263,12 @@ setup manifest is allowed; an executed attempt, cycle receipt or unresolved
 cycle lock prevents silently starting another invocation. There is no automatic
 retry/resume or environment Preflight gate.
 
+The cycle entry point loads the shared PowerShell module once. Nested setup and
+teardown scripts reuse it without forced reloads, which would invalidate helper
+bindings in later callbacks. Both scripts still support standalone staged use.
+Fresh-process regressions exercise the real stage scripts with external commands
+mocked, including successful execution and cleanup after execution failure.
+
 Run from the existing authorized GitHub-owner context and isolated lab profile.
 Native tool authorization must already support the intended execution; the
 runner never grants unrestricted permissions or changes trust settings.

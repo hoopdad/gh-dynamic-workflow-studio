@@ -126,3 +126,10 @@ remain in place. No paths added/deleted.
 Added `test-harness/Invoke-LabDeliveryTest.ps1`; existing setup/teardown scope
 guards and the two-module workflow payload are unchanged. Twenty-one offline
 harness checks include success and setup/execution/cleanup failure ordering.
+
+2026-10-30: reviewed from `dcebce8` for shared harness module lifetime.
+Nested setup/teardown scripts reuse the cycle entry point's loaded module rather
+than force-reloading it and invalidating later callback helper bindings.
+Twenty-three offline checks now include fresh-process runs of the real stage
+scripts for success and execution-failure cleanup. No paths added/deleted;
+workflow runtime, native permissions and ownership/cleanup guards are unchanged.

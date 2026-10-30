@@ -9,7 +9,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'LabDeliveryTest.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $PSScriptRoot 'LabDeliveryTest.psm1') -DisableNameChecking
 
 if (Test-Path -LiteralPath $ManifestPath) {
     $manifest = Read-LabManifest $TestRunId $ManifestPath
