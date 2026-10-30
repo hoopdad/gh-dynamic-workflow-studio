@@ -495,8 +495,15 @@ Do not silently self-grant, change externally managed trust/network/authenticati
 The workflow publishes the blocker and returns it to the operator; do not claim a separate alert was sent.
 Where private ownership accounting is configured, the runtime initializes it before agents. Preserve its
 accounting identity/markers and all existing assets when publishing updates; never replace it with an empty ledger.
+Local Git worktrees, source/design files and Git commits/branches are not external cleanup assets.
+Their prospective worktree scope is already recorded by the runtime; the harness lists retained worktrees separately.
+Do not rewrite private ownership merely to design, stage, commit or push source. Preserve that evidence in Git.
 Before any external mutation, publish its exact planned ownership and pinned cleanup procedure using the project's
-protocol. An empty inventory after an implementation-capable stage is incomplete accounting, not cleanup proof.`;
+protocol for ARM, Blob, image, grant, shared-configuration or process assets.
+Use only the exact approved evidence paths; do not create ad hoc sibling temporary evidence files.
+When ownershipPendingPath is supplied, use that single named staging file for atomic external-ledger
+updates. Retain it and stop on interruption/concurrent change; never overwrite unresolved pending evidence.
+An empty inventory after an implementation-capable stage is incomplete accounting, not cleanup proof.`;
 
 const transportRules = `If the project requires an existing owner-managed private transport, DevOps owns
 an application-side registration/handoff packet in its assigned files, not a second transport implementation.

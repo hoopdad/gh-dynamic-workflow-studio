@@ -227,3 +227,13 @@ Cycle 05 then published its design and verified scoped teardown, but its plan
 used Windows separators and failed existing exact-path validation. Plan schema
 descriptions/prompts now distinguish forward-slash Git ownership identifiers
 from native Windows filesystem paths; validation/ownership guards are unchanged.
+Cycle 06 confirmed those native operations/path identifiers, then blocked on
+Where-Object plus an unnecessary Architect inventory Add-Member update. Named
+Where-Object now supports inspection filtering. Common rules/cleanup docs make
+the existing prospective Git scope explicit: no per-commit external-ledger
+rewrite or ad hoc temporary evidence files. Exact evidence grants and actual
+external-asset accounting remain unchanged; no Add-Member grant was added.
+Atomic external-ledger updates have one explicit staging-file grant:
+ownership.pending.json. Bootstrap hands off ownershipPendingPath; cleanup fails
+closed while pending publication exists. The existing offline accounting test
+covers pending refusal and clean continuation; no new paths/dependencies.

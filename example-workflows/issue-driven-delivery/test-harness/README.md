@@ -185,7 +185,7 @@ session; completed blocked results use the documented continuation path.
 
 ## Delivery-owned cleanup protocol
 
-Before or alongside **every** mutation, workflow agents must atomically publish
+Before or alongside **every external-asset** mutation, workflow agents must atomically publish
 `delivery.ownershipPath` outside disposable paths:
 
 The generated workflow input opts into runtime ownership initialization with
@@ -198,6 +198,16 @@ metadata. Before Develop, the runtime marks external operations as possible;
 an empty inventory after that marker fails closed, even on an early failure.
 Design/UI/UX worktrees are retained and listed separately, not misreported as
 deleted cloud/process assets. No application cleanup implementation is prebuilt.
+That prospective Git scope already accounts for local source/design files and
+Git commits/branches; staging or pushing a design does not require an inventory
+rewrite. Keep Git evidence in Git, not invented external-asset entries.
+Private evidence grants name exact files, not a writable evidence directory.
+Do not create ad hoc sibling temporary files to publish a design inventory.
+For actual external-asset updates, `deployment-target.json.ownershipPendingPath`
+names the one approved `ownership.pending.json` staging file. Publish the exact
+ledger atomically while preserving prior assets/accounting; retain pending data
+and stop on an interrupted/concurrent update rather than overwrite it.
+Teardown refuses closure while that pending file exists.
 
 ```json
 {

@@ -414,6 +414,11 @@ function Resolve-LabParentIssue {
 function Get-LabCleanupPlan {
     param([Collections.IDictionary]$Manifest, [Collections.IDictionary]$Inventory)
     if ($Inventory.schemaVersion -ne 1 -or $Inventory.testRunId -cne $Manifest.testRunId) { throw 'Cleanup inventory identity mismatch' }
+    $pending = Join-Path $Manifest.evidenceRoot 'ownership.pending.json'
+    Assert-LabUnlinkedPath $pending
+    if (Test-Path -LiteralPath $pending) {
+        throw 'CLOSURE_UNKNOWN: pending ownership publication must be independently reconciled before cleanup'
+    }
     if ($Inventory.Contains('accounting')) {
         $accounting = $Inventory.accounting
         if ($accounting.workflowRunId -cne $Manifest.delivery.runId -or

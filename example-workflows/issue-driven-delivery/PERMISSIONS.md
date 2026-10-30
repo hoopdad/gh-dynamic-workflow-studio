@@ -109,6 +109,11 @@ Named PowerShell cmdlets such as `shell(Get-ChildItem)`, JSON converters
 `shell(ConvertTo-Json)` / `shell(ConvertFrom-Json)`, and Unix utilities such
 as `shell(ls)` are supported through an explicit inspection-command list.
 `shell(Write-Output)` emits console evidence; it does not grant file redirection.
+`shell(Where-Object)` supports data/path filtering; nested operations still need
+their own approvals. Neither grants a whole interpreter.
+The delivery profile's exact `ownership.pending.json` evidence grant supports
+atomic external-ledger publication, not directory writes. Bootstrap exposes its
+path; unresolved pending publication blocks teardown.
 This does not approve `powershell`, `pwsh`, `bash`, `sh` or arbitrary scripts.
 There is no universal "every read-only command" rule: plugins and versions vary,
 and options/configuration can change side effects. Generic `gh api`, secret/token

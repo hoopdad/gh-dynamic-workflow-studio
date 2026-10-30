@@ -97,7 +97,7 @@ test("blanket tools, wildcard families, interpreters and command expressions are
 
 test("named PowerShell and Unix inspection commands work without whole-interpreter grants", async (t) => {
     const { roots, profile } = await fixture(t);
-    profile.tools = ["Get-ChildItem", "Get-Content", "Write-Output", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path", "ConvertTo-Json", "ConvertFrom-Json",
+    profile.tools = ["Get-ChildItem", "Get-Content", "Write-Output", "Where-Object", "Get-FileHash", "Get-Process", "Resolve-DnsName", "Test-Path", "ConvertTo-Json", "ConvertFrom-Json",
         "ls", "pwd", "cat", "grep", "stat", "sha256sum"].map((command) => ({ pattern: `shell(${command})`, reason: "Inspection." }));
     const result = await reviewPermissions(profile, roots);
     for (const entry of profile.tools) assert.ok(result.nativeArgumentProposal.includes(entry.pattern));

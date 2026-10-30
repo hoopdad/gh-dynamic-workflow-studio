@@ -44,6 +44,7 @@
     { "pattern": "shell(Test-Path)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Resolve-Path)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Select-String)", "reason": "PowerShell inspection." },
+    { "pattern": "shell(Where-Object)", "reason": "Filter inspected data and validate disjoint ownership paths; does not grant nested commands or filesystem mutations." },
     { "pattern": "shell(Compare-Object)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Measure-Object)", "reason": "PowerShell inspection." },
     { "pattern": "shell(Get-Date)", "reason": "PowerShell inspection." },
@@ -417,7 +418,8 @@
   ],
   "writes": [
     { "root": "worktrees", "path": ".", "recursive": true, "reason": "All application source/design/test/IaC/build files below this explicitly bound application-specific worktree root, including future files and generated role/run paths; not the shared parent or other projects. Architect's exact disjoint file ownership still applies. This proposes bounded native editor approval, not shell/container filesystem containment." },
-    { "root": "evidence", "path": "ownership.json", "reason": "DevOps: exact deployment-target ownership ledger, atomically published before or alongside every mutation; include partial creation and recoverable closure, never fabricate an empty inventory." },
+    { "root": "evidence", "path": "ownership.json", "reason": "DevOps: exact deployment-target ownership ledger, atomically published before or alongside every external-asset mutation; include partial creation and recoverable closure, never fabricate an empty inventory. The runtime already records prospective local Git scope." },
+    { "root": "evidence", "path": "ownership.pending.json", "reason": "DevOps: single exact staging file for atomic external-ledger publication to ownership.json. Preserve a pending file after interruption/concurrent change and report blocked; no other temporary siblings or writable evidence directory." },
     { "root": "evidence", "path": "owner-cleanup.ps1", "reason": "DevOps: proposed exact owner cleanup artifact implementing Inspect/Apply/Verify; publish and pin its real source/hash before mutations. If the approved plan chooses another filename, review that exact replacement first." }
   ],
   "urls": [

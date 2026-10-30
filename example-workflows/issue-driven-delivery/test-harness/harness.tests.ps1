@@ -154,6 +154,19 @@ Check 'Initial workflow accounting is run-bound and never treats an empty post-d
         accounting = @{ workflowRunId = 'native-run'; gitWorktreeRoot = (Join-Path $m.worktreeRoot 'native-scope')
             externalOperationsPossible = $false } }
     Equal @(Get-LabCleanupPlan $m $i).Count 0
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) "delivery-pending-$([guid]::NewGuid())"
+    [void][IO.Directory]::CreateDirectory($temporary)
+    $m.evidenceRoot = $temporary
+    $pending = Join-Path $temporary 'ownership.pending.json'
+    try {
+        [IO.File]::WriteAllText($pending, '{}')
+        Reject { Get-LabCleanupPlan $m $i } 'pending ownership publication'
+        Remove-Item -LiteralPath $pending
+        Equal @(Get-LabCleanupPlan $m $i).Count 0
+    } finally {
+        if (Test-Path -LiteralPath $pending) { Remove-Item -LiteralPath $pending }
+        [IO.Directory]::Delete($temporary)
+    }
     $i.accounting.externalOperationsPossible = $true
     Reject { Get-LabCleanupPlan $m $i } 'empty assets are not closure'
     $i.accounting.externalOperationsPossible = $false

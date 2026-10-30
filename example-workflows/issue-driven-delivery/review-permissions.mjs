@@ -11,7 +11,7 @@ const inspectionCommands = new Set([
     "get-childitem", "get-content", "get-item", "get-location", "write-output", "get-filehash", "get-command", "get-module", "get-psdrive",
     "get-psprovider", "get-process", "get-service", "get-netadapter", "get-netipaddress", "get-netipconfiguration",
     "get-netroute", "get-nettcpconnection", "get-netudpendpoint", "get-dnsclient", "get-dnsclientserveraddress",
-    "resolve-dnsname", "test-path", "resolve-path", "select-string", "compare-object", "measure-object", "get-date",
+    "resolve-dnsname", "test-path", "resolve-path", "select-string", "where-object", "compare-object", "measure-object", "get-date",
     "get-culture", "get-uiculture", "get-computerinfo", "convertto-json", "convertfrom-json",
     "ls", "pwd", "cat", "head", "tail", "grep", "wc", "cut", "tr", "stat", "readlink", "realpath", "basename", "dirname",
     "du", "df", "uname", "whoami", "id", "cmp", "diff", "comm", "sha256sum", "sha512sum", "cksum",

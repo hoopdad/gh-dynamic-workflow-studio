@@ -244,6 +244,7 @@ Delivery source: $($manifest.sourceRevision). Test run: $TestRunId.
                 tenantId = $manifest.tenantId; region = 'westus3'; labRoot = $manifest.labRoot
                 sharedDependencies = $manifest.sharedDependencies; privateManifestPath = $ManifestPath
                 ownershipPath = $manifest.delivery.ownershipPath; modelAttemptLimit = 1000
+                ownershipPendingPath = (Join-Path $manifest.evidenceRoot 'ownership.pending.json')
                 cleanupProtocol = $protocol; workflowSourceRevision = $manifest.sourceRevision }
             if ($references) { $target.referenceBundle = $references }
             if ($manifest.Contains('modelAllowanceLineage')) { $target.modelAllowanceLineage = $manifest.modelAllowanceLineage }
