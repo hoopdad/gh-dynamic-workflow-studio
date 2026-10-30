@@ -501,6 +501,9 @@ entrypoint is unsupported, return the exact native capability blocker instead of
 Keep named subcommands first: enter the selected IaC/package directory with fail-fast Set-Location,
 then use terraform fmt/init or npm install/test when selected, not leading -chdir or --prefix forms.
 Use docker version rather than docker --version under a named version grant.
+Canonical syntax does not prove native matching works. If native diagnostics collapse a requested
+subcommand to a whole-client identifier or misclassify its HTTPS URL as a filesystem path, report
+the exact DELIVERY capability blocker; do not broaden to whole clients, UNC paths or interpreter access.
 Where private ownership accounting is configured, the runtime initializes it before agents. Preserve its
 accounting identity/markers and all existing assets when publishing updates; never replace it with an empty ledger.
 Local Git worktrees, source/design files and Git commits/branches are not external cleanup assets.

@@ -247,3 +247,12 @@ genuine approved project test entrypoints from bypass wrappers and prefer
 cwd-first Terraform/npm plus docker version. Colocated permission/prompt tests
 cover the changes; no paths, dependencies, installer payload or cleanup guards
 changed.
+
+2026-10-30: reviewed from `8b13bc2` after cycle 08 and an isolated native fixture.
+PERMISSIONS.md records that Windows 1.0.105 collapses Docker/Terraform/Azure
+metadata commands to whole-client identifiers and misclassifies npm registry
+HTTPS arguments as paths even when separated/quoted. Those narrow proposals
+are not unattended-delivery-ready. Common rules require an actionable native
+capability blocker, not whole-client/UNC/interpreter expansion. Genuine npm
+test/run checks did execute. Existing prompt tests cover the stop contract;
+no paths, dependencies, profile grants or cleanup guards changed.

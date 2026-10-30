@@ -157,6 +157,29 @@ Do not create wrappers/package scripts merely to conceal a denied command.
 An essential unsupported entrypoint requires specific native review or a
 capability blocker, not a fabricated passing check.
 
+### Confirmed native Windows blockers
+
+The expanded draft is **not unattended-delivery-ready on the tested Windows
+CLI 1.0.105**. Cycle diagnostics and an isolated native fixture classified
+`docker version`, `terraform version` and `az version` as `docker`, `terraform`
+and `az`; their named subcommand grants did not authorize execution.
+Do not replace them with whole-client grants.
+
+The native parser also classified npm's explicit HTTPS registry argument as
+an out-of-scope `//packagefeedproxy.microsoft.io/npm/`-shaped filesystem path,
+with no recognized URL. Separating and quoting the URL did not repair the
+isolated test. Do not grant that spurious UNC path, disable path checks or claim
+that a host approval fixes it. Genuine `npm test` and `npm run` checks without
+that registry argument did execute in the workflow; this is not a blanket
+failure of project test runners.
+
+These are native matching/parser blockers, not evidence that Docker is down,
+Azure RBAC failed or the lab needs modification: those commands did not execute.
+Preserve the exact request, parser identifiers and failed lifecycle receipts.
+Proceed only after a compatible native parser/selector fix is verified, or
+through a supported interactive workflow session with specific per-operation
+approval. Do not burn further fresh delivery cycles on an unchanged blocker.
+
 For a delivery proposal, review each role separately: writers need only assigned
 file operations and Git publication; Test needs the chosen build/test runners;
 DevOps needs the chosen IaC, image publication, deployment, rollback and owned

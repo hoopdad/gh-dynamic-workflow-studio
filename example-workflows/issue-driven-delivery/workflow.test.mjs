@@ -225,6 +225,7 @@ test("literal delivery flow fans out all six writers, then gates deployment, E2E
             assert.match(prompt, /Plan genuine project test entrypoints around explicitly approved runners/);
             assert.match(prompt, /Do not generate wrappers or package scripts merely to bypass a denied operation/);
             assert.match(prompt, /not leading -chdir or --prefix forms/);
+            assert.match(prompt, /do not broaden to whole clients, UNC paths or interpreter access/);
         }
         if (!options.label.includes(":develop:")) return original(prompt, options);
         active++;
