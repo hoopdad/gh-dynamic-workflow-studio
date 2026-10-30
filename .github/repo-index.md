@@ -107,5 +107,5 @@ offline tests. Run `node --test example-workflows\issue-driven-delivery\test-har
 alongside the two example suites; root Studio test/check commands are unchanged.
 2026-10-30: reviewed from `9af7762` for delivery-only `Preflight`, ignored-leaf
 inventory and state-bearing reset refusal. No paths added/deleted; the runtime
-payload is unchanged. Fifteen offline harness checks cover stage isolation and
-the retained ownership/closure gates.
+payload is unchanged. Sixteen offline harness checks cover stage isolation,
+Git worktree-path normalization and the retained ownership/closure gates.

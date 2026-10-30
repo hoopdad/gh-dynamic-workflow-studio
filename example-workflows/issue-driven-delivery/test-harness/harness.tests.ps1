@@ -87,6 +87,16 @@ Check 'Reset never removes the worktree parent/default branch or accepts a moved
     $m.previous.branches = @(@{ name = 'feature/issue-9'; sha = 'unverified'; remote = $true })
     Reject { Get-LabResetPlan $m } 'Unsafe branch'
 }
+Check 'Git slash normalization never inventories the primary checkout as disposable' {
+    $m = Fixture
+    $tree = Join-Path $m.worktreeRoot 'run/issue-1/agent-1'
+    $porcelain = "worktree $($m.repositoryRoot -replace '\\', '/')`nHEAD $('a' * 40)`nbranch refs/heads/main`n`n" +
+        "worktree $($tree -replace '\\', '/')`nHEAD $('b' * 40)`ndetached`n"
+    $actual = @(Get-LabDisposableWorktrees $m.repositoryRoot $porcelain)
+    Equal $actual.Count 1
+    Equal $actual[0].path ([IO.Path]::GetFullPath($tree))
+    Equal $actual[0].head ('b' * 40)
+}
 Check 'Setup generates exactly three stable ordered immutable parent requirements without implementation' {
     $parents = @(Get-LabParentIssues 'offline-123')
     Equal $parents.Count 3

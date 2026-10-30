@@ -65,16 +65,7 @@ try {
             $files += @{ path = $name; sha256 = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
         $trees = Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'worktree', 'list', '--porcelain')
-        $worktrees = @()
-        foreach ($block in ($trees -split '\r?\n\r?\n')) {
-            if ($block -match '(?m)^worktree (.+)\r?$') {
-                $treePath = $Matches[1].Trim()
-                if ($treePath -ine $manifest.repositoryRoot) {
-                    if ($block -notmatch '(?m)^HEAD ([a-f0-9]{40})') { throw 'Worktree HEAD missing' }
-                    $worktrees += @{ path = $treePath; head = $Matches[1] }
-                }
-            }
-        }
+        $worktrees = @(Get-LabDisposableWorktrees $manifest.repositoryRoot $trees)
         $stateFiles = @()
         foreach ($root in @($manifest.repositoryRoot) + @($worktrees | ForEach-Object path)) {
             $stateFiles += @(Get-ChildItem -LiteralPath $root -File -Recurse -Force |

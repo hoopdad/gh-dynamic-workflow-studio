@@ -8,5 +8,5 @@ test("offline PowerShell lifecycle scope and failure-path regressions", async ()
     const { stdout } = await promisify(execFile)("pwsh", [
         "-NoProfile", "-File", fileURLToPath(new URL("./harness.tests.ps1", import.meta.url)),
     ], { timeout: 30_000 });
-    assert.match(stdout, /15 offline harness checks passed/);
+    assert.match(stdout, /16 offline harness checks passed/);
 });

@@ -128,6 +128,17 @@ function Get-LabRuntimeHashes {
     return $hashes
 }
 
+function Get-LabDisposableWorktrees {
+    param([string]$RepositoryRoot, [string]$Porcelain)
+    foreach ($block in ($Porcelain -split '\r?\n\r?\n')) {
+        if ($block -notmatch '(?m)^worktree (.+)\r?$') { continue }
+        $treePath = [IO.Path]::GetFullPath($Matches[1].Trim())
+        if ($treePath -ieq [IO.Path]::GetFullPath($RepositoryRoot)) { continue }
+        if ($block -notmatch '(?m)^HEAD ([a-f0-9]{40})') { throw 'Worktree HEAD missing' }
+        @{ path = $treePath; head = $Matches[1] }
+    }
+}
+
 function Assert-LabPinnedSource {
     param([Collections.IDictionary]$Manifest)
     $head = Invoke-LabCommand git @('-C', $Manifest.sourceRoot, 'rev-parse', 'HEAD')
