@@ -498,7 +498,7 @@ $global:labCycleTrace.Add('teardown')
         Remove-Item -LiteralPath $temporary -Recurse -Force
     }
 }
-foreach ($scenario in @('success', 'retained-success', 'execution-failure')) {
+foreach ($scenario in @('success', 'retained-success', 'interactive-success', 'execution-failure')) {
     Check "Real stages retain helpers and reviewed child permissions in a fresh process ($scenario)" {
         $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-real-cycle-$([guid]::NewGuid().ToString('N'))"
         $harness = Join-Path $temporary 'harness'
@@ -589,9 +589,16 @@ function global:node {
     }
     $global:LASTEXITCODE = 0
     if (-not ([string]$args[0]).EndsWith('observe-runs.mjs')) { throw 'Unexpected fixture Node operation' }
+    if ($args.Count -eq 4) {
+        if ($global:scenario -ne 'interactive-success' -or $args[3] -cne $global:interactiveSession) {
+            throw 'Interactive result was not read from its exact owning session'
+        }
+        return @{ sessionId = $global:interactiveSession; runId = 'fixture-run'
+            status = 'completed'; stale = $false; result = @{ status = 'done' }; error = $null } | ConvertTo-Json -Depth 5
+    }
     $runs = @()
     if ($global:invocations) {
-        $runs = @(@{ sessionId = 'fixture-session'; runId = 'fixture-run'
+        $runs = @(@{ sessionId = $(if ($global:scenario -eq 'interactive-success') { $global:interactiveSession } else { 'fixture-session' }); runId = 'fixture-run'
             status = $(if ($global:scenario -ne 'execution-failure') { 'completed' } else { 'error' }) })
     }
     return @{ runs = $runs; warnings = @() } | ConvertTo-Json -Depth 5
@@ -604,30 +611,46 @@ function global:az {
 }
 function global:copilot {
     $global:invocations++
-    if ($global:invocations -ne 1 -or $args -notcontains 'issue-driven-delivery') {
+    if ($global:invocations -ne 1 -or ($global:scenario -ne 'interactive-success' -and $args -notcontains 'issue-driven-delivery')) {
         throw 'Unexpected fixture workflow invocation'
     }
-    $expected = @($global:expectedPermissionArguments) + @('-C', $global:fixture.repositoryRoot,
+    $expected = @($global:expectedPermissionArguments) + @('-C', $global:fixture.repositoryRoot)
+    if ($global:scenario -eq 'interactive-success') {
+        $global:interactiveSession = $args[[Array]::IndexOf($args, '--session-id') + 1]
+        $prompt = $args[[Array]::IndexOf($args, '-i') + 1]
+        if ($global:interactiveSession -notmatch '^[a-f0-9-]{36}$' -or
+            $prompt -notmatch 'run_dynamic_workflow' -or $prompt -notmatch 'not a headless' -or
+            -not $prompt.Contains((Join-Path $global:fixture.repositoryRoot '.github\delivery-input.json'))) {
+            throw 'Interactive invocation lost its native workflow/input contract'
+        }
+        $expected += @('--session-id', $global:interactiveSession, '-i', $prompt)
+    } else {
+        $expected += @(
         'workflow', 'run', 'issue-driven-delivery', '--args',
         "@$(Join-Path $global:fixture.repositoryRoot '.github\delivery-input.json')",
         '--result-file', (Join-Path $global:fixture.evidenceRoot 'workflow-result.json'))
+    }
     if ((ConvertTo-Json -InputObject @($args) -Compress) -cne
         (ConvertTo-Json -InputObject $expected -Compress)) { throw 'Reviewed arguments did not reach the native child exactly' }
     @{ schemaVersion = 1; testRunId = $global:fixture.testRunId; assets = @() } |
         ConvertTo-Json | Set-Content -LiteralPath $global:fixture.delivery.ownershipPath
     $global:LASTEXITCODE = 7
     if ($global:scenario -ne 'execution-failure') {
-        $resultPath = $args[[Array]::IndexOf($args, '--result-file') + 1]
-        '{"status":"done"}' | Set-Content -LiteralPath $resultPath
+        if ($global:scenario -ne 'interactive-success') {
+            $resultPath = $args[[Array]::IndexOf($args, '--result-file') + 1]
+            '{"status":"done"}' | Set-Content -LiteralPath $resultPath
+        }
         $global:LASTEXITCODE = 0
     }
 }
 $runner = Join-Path $Harness 'Invoke-LabDeliveryTest.ps1'
 $before = (Get-FileHash -LiteralPath $ManifestPath).Hash
 $inspection = & $runner $global:fixture.testRunId $ManifestPath $null Inspect `
-    -PermissionProfilePath $profilePath -RetainSuccessfulApplication:($Scenario -ne 'success') | ConvertFrom-Json -AsHashtable
+    -PermissionProfilePath $profilePath -RetainSuccessfulApplication:($Scenario -ne 'success') `
+    -Interactive:($Scenario -eq 'interactive-success') | ConvertFrom-Json -AsHashtable
 if ($global:invocations -or $inspection.automaticMutations -or
     $inspection.retainSuccessfulApplication -ne ($Scenario -ne 'success') -or
+    $inspection.interactive -ne ($Scenario -eq 'interactive-success') -or
     (ConvertTo-Json -InputObject $inspection.permissionArguments -Compress) -cne
     (ConvertTo-Json -InputObject $global:expectedPermissionArguments -Compress)) {
     throw 'Inspection failed to preview the exact permissions without launching'
@@ -647,7 +670,8 @@ if ($invalidFailure -notmatch 'node failed' -or $global:invocations -or (Get-Fil
 $failure = $null
 try {
     & $runner -TestRunId $global:fixture.testRunId -ManifestPath $ManifestPath `
-        -PermissionProfilePath $profilePath -Mode Apply -RetainSuccessfulApplication:($Scenario -ne 'success') | Out-Null
+        -PermissionProfilePath $profilePath -Mode Apply -RetainSuccessfulApplication:($Scenario -ne 'success') `
+        -Interactive:($Scenario -eq 'interactive-success') | Out-Null
 } catch { $failure = $_.Exception.Message }
 $receipt = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'lifecycle-receipt.json') -Raw |
     ConvertFrom-Json -AsHashtable
@@ -655,8 +679,8 @@ if ($global:invocations -ne 1) { throw "Workflow not invoked exactly once: $($re
 $cleanup = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'cycle-teardown-receipt.json') -Raw |
     ConvertFrom-Json -AsHashtable
 if ($receipt.setup -cne 'passed' -or
-    ($Scenario -eq 'retained-success' -and ($receipt.teardown -cne 'deferred' -or $cleanup.status -cne 'deferred')) -or
-    ($Scenario -ne 'retained-success' -and ($receipt.teardown -cne 'passed' -or $cleanup.status -cne 'verified'))) {
+    ($Scenario -in @('retained-success','interactive-success') -and ($receipt.teardown -cne 'deferred' -or $cleanup.status -cne 'deferred')) -or
+    ($Scenario -notin @('retained-success','interactive-success') -and ($receipt.teardown -cne 'passed' -or $cleanup.status -cne 'verified'))) {
     throw "Real stage failure: $($receipt | ConvertTo-Json -Depth 10)"
 }
 $saved = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable
@@ -664,7 +688,7 @@ if ($saved.delivery.runId -cne 'fixture-run' -or -not $saved.delivery.stopped) {
     throw 'Native observation did not retain the stopped run identity'
 }
 if ($Scenario -ne 'execution-failure') {
-    $expectedStatus = if ($Scenario -eq 'retained-success') { 'delivered' } else { 'passed' }
+    $expectedStatus = if ($Scenario -in @('retained-success','interactive-success')) { 'delivered' } else { 'passed' }
     if ($failure -or $receipt.status -cne $expectedStatus -or $receipt.execution -cne 'passed' -or $receipt.errors.Count) {
         throw 'Successful real-stage fixture did not pass'
     }

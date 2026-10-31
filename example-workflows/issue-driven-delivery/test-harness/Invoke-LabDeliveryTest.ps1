@@ -6,7 +6,8 @@ param(
     [string]$ConfigurationPath,
     [ValidateSet('Inspect', 'Apply')][string]$Mode = 'Inspect',
     [string]$PermissionProfilePath,
-    [switch]$RetainSuccessfulApplication
+    [switch]$RetainSuccessfulApplication,
+    [switch]$Interactive
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -46,6 +47,7 @@ if ($Mode -eq 'Inspect' -or $WhatIfPreference) {
         setup = @('Inventory', 'Reset', 'Bootstrap', 'Issues')
         permissionProfilePath = $PermissionProfilePath; permissionArguments = $permissionArguments
         retainSuccessfulApplication = [bool]$RetainSuccessfulApplication
+        interactive = [bool]$Interactive
         resume = $false; receiptPath = $receiptPath; automaticMutations = $false } | ConvertTo-Json -Depth 5
     return
 }
@@ -84,18 +86,45 @@ try {
             throw 'Execution artifacts already exist; refusing another invocation'
         }
         $inputPath = Join-Path $current.repositoryRoot '.github\delivery-input.json'
+        $sessionId = if ($Interactive) { [guid]::NewGuid().ToString() } else { $null }
+        if ($Interactive) {
+            $current.delivery.sessionId = $sessionId
+            Write-LabJson $ManifestPath $current
+        }
         Push-Location -LiteralPath $current.repositoryRoot
         try {
             # Fixed-arity -C terminates variadic permission options before the subcommand.
-            & copilot @nativeArguments workflow run issue-driven-delivery `
-                --args "@$inputPath" --result-file $resultPath 2>&1 |
-                ForEach-Object { Write-Host $_ }
+            if ($Interactive) {
+                $prompt = @"
+Run exactly one registered issue-driven-delivery workflow using run_dynamic_workflow with the JSON arguments from '$inputPath'.
+Use the native workflow tool in this interactive session, not a headless copilot subprocess.
+Keep normal native permissions. Let the operator respond to exact-operation approval prompts; never broaden permissions or bypass a denial.
+Wait for the workflow's completion notification and inspect that same run with dynamic_workflows_manage.
+Do not start another workflow, edit the launcher/input or invent a successful result.
+When it finishes, report its actual outcome and stop. Tell the operator to use /exit to let the enclosing harness record the canonical result and retain success or attempt guarded cleanup.
+"@
+                & copilot @nativeArguments --session-id $sessionId -i $prompt
+            } else {
+                & copilot @nativeArguments workflow run issue-driven-delivery `
+                    --args "@$inputPath" --result-file $resultPath 2>&1 |
+                    ForEach-Object { Write-Host $_ }
+            }
             $code = $LASTEXITCODE
         } finally { Pop-Location }
         $current = Read-LabManifest $TestRunId $ManifestPath
         $current.delivery.exitCode = $code
         Write-LabJson $ManifestPath $current
         if ($code -ne 0) { throw "Workflow command failed (exit $code); inspect its recorded owning Copilot session" }
+        if ($Interactive) {
+            $outcome = Invoke-LabCommand node @(
+                (Join-Path $PSScriptRoot 'observe-runs.mjs'), $current.sourceRoot, $current.repositoryRoot, $sessionId
+            ) | ConvertFrom-Json -AsHashtable
+            Write-LabJson (Join-Path $current.evidenceRoot 'native-workflow-outcome.json') $outcome
+            if ($outcome.status -cne 'completed' -or $outcome.stale) {
+                throw "Native workflow ended as $($outcome.status): $($outcome.error)"
+            }
+            Write-LabJson $resultPath $outcome.result
+        }
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
         if ($result.status -cne 'done') { throw "Workflow did not deliver the queue: $($result.status)" }
     }.GetNewClosure()

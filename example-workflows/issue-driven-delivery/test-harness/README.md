@@ -31,6 +31,14 @@ for live assessment and subsequent scoped teardown before another clean test.
 Failed execution or completion still takes the existing guarded cleanup path.
 Without this switch, the original always-teardown behavior is unchanged.
 
+An assisted baseline may also pass `-Interactive`. This launches Copilot's
+supported interactive prompt mode in the application directory with the same
+reviewed permission arguments. It starts one native workflow, allowing the
+operator to answer exact-operation prompts. After completion, use `/exit`;
+the harness reads the canonical result from that owning session's read-only
+workflow store, not the chat response. Assisted execution is not the final
+intervention-free proof. Default unattended invocation remains unchanged.
+
 Run the offline checks **before** reset or delivery:
 
 ```powershell

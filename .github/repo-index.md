@@ -272,3 +272,9 @@ keeps a delivered app for live assessment and records cleanup as deferred;
 failures and default runs retain existing guarded teardown.
 No added/deleted repository paths, dependencies,
 installer payload, native permission expansion or new readiness phase.
+
+2026-10-31: assisted baseline launch from `35bb448` adds optional harness
+`-Interactive` using native `copilot -i` and the same reviewed permissions.
+After the operator exits, `observe-runs.mjs` can return the canonical result
+for exactly one issue-driven delivery in its owning session via the existing
+read-only Studio store. No Studio/runtime payload or unattended behavior changes.
