@@ -103,7 +103,7 @@ Wait for the workflow's completion notification and inspect that same run with d
 Do not start another workflow, edit the launcher/input or invent a successful result.
 When it finishes, report its actual outcome and stop. Tell the operator to use /exit to let the enclosing harness record the canonical result and retain success or attempt guarded cleanup.
 "@
-                & copilot @nativeArguments --session-id $sessionId -i $prompt
+                & copilot @nativeArguments --experimental --session-id $sessionId -i $prompt
             } else {
                 & copilot @nativeArguments workflow run issue-driven-delivery `
                     --args "@$inputPath" --result-file $resultPath 2>&1 |

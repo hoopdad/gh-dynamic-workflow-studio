@@ -623,7 +623,7 @@ function global:copilot {
             -not $prompt.Contains((Join-Path $global:fixture.repositoryRoot '.github\delivery-input.json'))) {
             throw 'Interactive invocation lost its native workflow/input contract'
         }
-        $expected += @('--session-id', $global:interactiveSession, '-i', $prompt)
+        $expected += @('--experimental', '--session-id', $global:interactiveSession, '-i', $prompt)
     } else {
         $expected += @(
         'workflow', 'run', 'issue-driven-delivery', '--args',

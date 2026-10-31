@@ -278,3 +278,10 @@ installer payload, native permission expansion or new readiness phase.
 After the operator exits, `observe-runs.mjs` can return the canonical result
 for exactly one issue-driven delivery in its owning session via the existing
 read-only Studio store. No Studio/runtime payload or unattended behavior changes.
+
+2026-10-31: interactive launch correction from `c988d23` explicitly enables
+the SDK experimental host. The existing fresh-process fixture now checks that
+argument with the unchanged reviewed permissions. Documentation requires a real
+console: native metadata inspection there registered the canonical two-module
+workflow without authoring or execution, while earlier prompt-mode checks were
+empty. No added/deleted repository paths, runtime payload or permission changes.
