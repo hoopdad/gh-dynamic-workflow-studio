@@ -115,6 +115,8 @@ const reportSchema = object({
     status: { type: "string", enum: ["pass", "rework", "blocked"] },
     sha: string, summary: string, evidence: strings, findings: array(findingSchema),
 });
+const liveReportSchema = object(Object.fromEntries(
+    Object.entries(reportSchema.properties).filter(([key]) => key !== "sha")));
 const planSchema = object({
     status: { type: "string", enum: ["ready", "blocked"] }, summary: string,
     sha: string, designFile: repositoryPath,
@@ -217,13 +219,13 @@ export async function requestPlan(request, issue, requirements) {
     }
 }
 
-export function validateReport(report, plan, sha) {
+export function validateReport(report, plan, sha, { liveSystem = false } = {}) {
     if (!report || !["pass", "rework", "blocked"].includes(report.status)
-        || !isSha(report.sha) || !report.summary.trim()
+        || (!liveSystem && !isSha(report.sha)) || !report.summary.trim()
         || !report.evidence.length || report.evidence.some((item) => !item.trim())) {
         throw new Error("Agent returned no usable report/evidence; this is not a pass");
     }
-    if (sha && report.sha !== sha) throw new Error("Evidence does not match the candidate commit");
+    if (!liveSystem && sha && report.sha !== sha) throw new Error("Evidence does not match the candidate commit");
     const ids = new Set(plan.requirements.map((requirement) => requirement.id));
     for (const finding of report.findings) {
         if ((!ids.has(finding.requirementId) && finding.requirementId !== "DELIVERY")
@@ -561,6 +563,8 @@ export const deliveryWorkflow = {
             maxDeploymentAttempts: { type: "integer" },
             reviewPolls: { type: "integer" },
             ownership: object({ testRunId: string, evidenceRoot: string }),
+            executionMode: { type: "string", enum: ["project", "local"] },
+            acceptanceMode: { type: "string", enum: ["candidate", "live-system"] },
         }),
     },
     run: (ctx) => runDelivery(ctx),
@@ -572,6 +576,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
     const {
         deploymentTarget, issueNumber = 0, stackAfter = 0, readyLabel = "workflow:ready",
         maxRounds, maxDeploymentAttempts = 3, reviewPolls = 60,
+        executionMode = "project", acceptanceMode = "candidate",
     } = ctx.args;
     const worktreeBase = resolveWorktreeRoot(ctx.args.worktreeRoot);
     if (typeof deploymentTarget !== "string" || !deploymentTarget.trim()
@@ -579,17 +584,19 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         || !Number.isSafeInteger(issueNumber) || issueNumber < 0
         || !Number.isSafeInteger(stackAfter) || stackAfter < 0
         || (maxRounds !== undefined && (!Number.isSafeInteger(maxRounds) || maxRounds < 1))
+        || !["project", "local"].includes(executionMode) || !["candidate", "live-system"].includes(acceptanceMode)
         || [maxDeploymentAttempts, reviewPolls].some((n) => !Number.isSafeInteger(n) || n < 1)) {
         throw new Error("Supply an explicit deploymentTarget, nonempty readyLabel and positive integer budgets");
     }
     const ownership = await initializeOwnership(ctx.args.ownership, ctx.runId, worktreeBase);
-    const repo = await ctx.step("v3:repository", () => io.repository());
-    const stack = stackAfter ? await ctx.step("v3:initial-stack",
+    const version = acceptanceMode === "live-system" ? "v4" : "v3";
+    const repo = await ctx.step(`${version}:repository`, () => io.repository());
+    const stack = stackAfter ? await ctx.step(`${version}:initial-stack`,
         () => loadStack(io, stackAfter, repo.defaultBranchRef.name)) : [];
     for (let position = 0; ; position++) {
         await verifyStack(io, stack);
         ctx.phase("Scan");
-        const issue = await ctx.step(`v3:selection:${position}`,
+        const issue = await ctx.step(`${version}:selection:${position}`,
             () => io.select(position === 0 ? issueNumber : 0, readyLabel, stack.map((entry) => entry.issueNumber)));
         if (!issue) {
             await io.verifyNativeStack(stack);
@@ -602,12 +609,13 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
         if (stack.some((entry) => entry.issueNumber === issue.number)) throw new Error("Selected issue is already in this PR stack");
         const previous = stack.at(-1);
         const baseBranch = previous?.branch ?? repo.defaultBranchRef.name;
-        const baseSha = await ctx.step(`v3:base:${issue.number}`, () => io.head(baseBranch));
+        const baseSha = await ctx.step(`${version}:base:${issue.number}`, () => io.head(baseBranch));
         if (previous && baseSha !== previous.sha) throw new Error("Stack tip changed before starting the next issue");
-        const result = await ctx.step(`v3:delivery:${issue.number}`, async () => {
+        const result = await ctx.step(`${version}:delivery:${issue.number}`, async () => {
             await io.verifyNativeStack(stack, position === 0 ? issueNumber : issue.number);
             const delivered = await runIssue(ctx, io, {
                 repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls, ownership,
+                executionMode, acceptanceMode, version,
             });
             if (delivered.status !== "ready") return delivered;
             const nextStack = [...stack, delivered];
@@ -617,7 +625,7 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
             await io.publishStack(nextStack);
             await verifyStack(io, nextStack);
             await io.verifyNativeStack(nextStack);
-            await ctx.step(`v3:finish:${issue.number}`, async () => { await io.finish(issue.number, readyLabel); return issue.number; });
+            await ctx.step(`${version}:finish:${issue.number}`, async () => { await io.finish(issue.number, readyLabel); return issue.number; });
             return delivered;
         });
         if (result.status !== "ready") return { ...result, stack, stackAfter: previous?.pullRequestNumber ?? 0 };
@@ -625,12 +633,29 @@ export async function runDelivery(ctx, io = githubIO(command(process.cwd(), ctx.
     }
 }
 
-async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls, ownership }) {
-    const step = (key, producer) => ctx.step(`v3:issue:${issue.number}:${key}`, producer);
+async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, deploymentTarget, worktreeBase, maxRounds, maxDeploymentAttempts, reviewPolls, ownership,
+    executionMode, acceptanceMode, version }) {
+    const step = (key, producer) => ctx.step(`${version}:issue:${issue.number}:${key}`, producer);
     const branch = `feature/issue-${issue.number}`;
     const label = `delivery:issue-${issue.number}`;
     await step("scope-label", async () => { await io.label(label); return label; });
-    const identity = JSON.stringify({ repo: repo.nameWithOwner, parent: issue, branch, baseBranch, baseSha, scopeLabel: label, deploymentTarget });
+    const liveSystem = acceptanceMode === "live-system";
+    const identity = JSON.stringify({ repo: repo.nameWithOwner, parent: issue, branch, baseBranch, baseSha, scopeLabel: label, deploymentTarget,
+        executionMode, acceptanceMode });
+    const evaluationSchema = liveSystem ? liveReportSchema : reportSchema;
+    const evaluationRules = liveSystem
+        ? rules.replace("Report exact commands, exit codes, logs/URLs and commit SHA in evidence.",
+            "Report actual commands, exit codes, target URLs and observed behavior in evidence. Commit IDs are for Git publication only, not application acceptance.")
+        : rules;
+    const executionRules = executionMode === "local"
+        ? `Use the authenticated local lab tooling selected by this project (for example az, azd, Docker, ruff or pytest).
+Do not introduce GitHub Actions, remote CI, new credentials or a second deployment stack.
+Use the smallest implementation meeting the quoted requirements; do not assume Terraform or separate services are mandatory.
+Discover task-resolvable configuration through normal authorized operations and keep nonsecret configuration in owned project files.
+Do not invent operator-filled deliveryPaths, verified booleans, plan-hash approval locks or deployment fingerprints absent explicit project policy.
+Use the provided ownership, pending and cleanup paths for private accounting; preserve authorization and externally managed prerequisites.
+Use the already configured approved package feed without unnecessary inline registry URL arguments. Never change feeds or suppress real errors.`
+        : "Honor the project's existing choice of GitHub Actions or local scripts/tools and its approval policies.";
     const worktreeRoot = path.join(worktreeBase,
         createHash("sha256").update(ctx.runId).digest("hex").slice(0, 16), `issue-${issue.number}`);
     const blocked = (summary, report) => {
@@ -642,13 +667,14 @@ async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, depl
     let plan;
     let uiUxSelected = false;
     async function agent(role, stage, prompt, schema = reportSchema) {
-        const result = await ctx.agent(`${rules}\n${identity}\nRole: ${role}\n${prompt}`,
+        const result = await ctx.agent(`${evaluationRules}\n${identity}\nRole: ${role}\n${executionRules}\n${prompt}`,
             { label: `issue-${issue.number}:${stage}:${role}`, schema });
         if (!result) throw new Error(`${stage}:${role} failed or returned invalid output; not a pass`);
         return result;
     }
     async function reconcile(stage, report) {
-        validateReport(report, plan);
+        const applicationEvaluation = liveSystem && ["local", "deployment", "e2e", "review"].includes(stage);
+        validateReport(report, plan, undefined, { liveSystem: applicationEvaluation });
         for (const finding of report.findings) {
             await io.file(repo.nameWithOwner, label, issue.number, branch, stage, finding);
         }
@@ -657,7 +683,7 @@ async function runIssue(ctx, io, { repo, issue, stack, baseBranch, baseSha, depl
             for (const item of issues) {
                 if (item.body?.includes(`<!-- delivery:${issue.number}:${branch}:`)
                     && item.body.includes(`\nStage: ${stage}\n`)) {
-                    await io.close(item.number, `Verified at ${report.sha}\n${report.evidence.join("\n")}`);
+                    await io.close(item.number, `${applicationEvaluation ? "Verified against the current system" : `Verified at ${report.sha}`}\n${report.evidence.join("\n")}`);
                 }
             }
         }
@@ -690,7 +716,7 @@ Keep interfaces fixed during this round; communicate changes via the design, not
 Omit implementation of unaffected tiers with files:[] and explain why. Test and DevOps remain active.
 Test owns local/unit/integration tests, local E2E, deployed E2E and post-deploy smoke tests.
 DevOps writes the project's required provisioning/deployment implementation and owns scan/lint/format checks,
-CI/deploy/rollback tooling, honoring the project's preference for GitHub Actions OR local scripts/tools.
+${executionMode === "local" ? "local deploy/rollback tooling using the existing authenticated lab environment." : "CI/deploy/rollback tooling, honoring the project's preference for GitHub Actions OR local scripts/tools."}
 Derive prerequisites from explicit project/issue requirements and dependency constraints.
 Do not introduce a competing delivery stack or assume a universal set of deployment technologies.
 Nullable resource IDs and unresolved environment metadata are investigation tasks, not by themselves
@@ -792,7 +818,7 @@ Implement independently. Stay within these exact owned files, including any new 
 If another file is needed, return an evidenced blocker for Architect replanning rather than editing it.
 Test: write requirement-traceable tests and runnable local/E2E/smoke commands, but do not evaluate incomplete peer work.
 DevOps: write the project's required provisioning/deployment implementation (including Terraform where required)
-and scan/lint/format-check, CI/deploy/rollback tooling. DO NOT provision or deploy during this phase.
+and scan/lint/format-check, ${executionMode === "local" ? "local deploy/rollback" : "CI/deploy/rollback"} tooling. DO NOT provision or deploy during this phase.
 DevOps private-transport contract, only where required by this project: ${transportRules}
 Return only after your own commit is pushed (or you are blocked). Findings must cite requirements;
 an operational blocker uses DELIVERY. Pass evidence includes your commit and successful push.`);
@@ -809,22 +835,23 @@ an operational blocker uses DELIVERY. Pass evidence includes your commit and suc
         }
         let sha = await io.head(branch);
         for (const item of reports) await io.ancestor(item.report.sha, sha);
-        const candidate = () => `Candidate ${sha}; branch ${branch}; design ${plan.designFile}.
+        const candidate = () => `${liveSystem ? `Current application; branch ${branch}` : `Candidate ${sha}; branch ${branch}`}; design ${plan.designFile}.
 ${uiUxHandoff}
-Requirements: ${JSON.stringify(plan.requirements)}. Check out this exact commit in your own isolated worktree
+Requirements: ${JSON.stringify(plan.requirements)}. ${liveSystem ? "Use the current feature branch" : "Check out this exact commit"} in your own isolated worktree
 under ${worktreeRoot}. Evaluation is read-only except build/test outputs: do not modify tracked tests,
 source or configuration. Verify a clean tracked worktree before and after each evaluation.
 Never close an issue without rerunning its check.
 Report a finding only for a demonstrated failure against these requirements (or an explicit DELIVERY blocker).
-Use the same check name for the same failure across retries. Return sha=${sha} with actual execution evidence.`;
+Use the same check name for the same failure across retries.
+${liveSystem ? "Judge current behavior and actual test results. Missing, differing or equivalent deployment fingerprints are not failures. Do not require or return an application SHA; return actual execution evidence." : `Return sha=${sha} with actual execution evidence.`}`;
         ctx.phase("Local tests");
         const local = validateReport(await agent("Test", `${round}:local`, `${candidate()}
 Run ALL project local tests, including requirement tests and local end-to-end flows. Compile/typecheck where
-required to execute them. Missing/unrun tests are not passes. Return requirement-linked failures for tier owners.`), plan, sha);
+required to execute them. Missing/unrun tests are not passes. Return requirement-linked failures for tier owners.`, evaluationSchema), plan, sha, { liveSystem });
         await reconcile("local", local);
         if (needsIntervention(local)) return blocked(local.summary, local);
         if (local.status !== "pass") { outstanding = await io.issues(repo.nameWithOwner, label); continue; }
-        if (await io.head(branch) !== sha || await io.head(baseBranch) !== baseSha) return blocked("Candidate or stack base changed after local tests; rerun before deployment");
+        if (!liveSystem && (await io.head(branch) !== sha || await io.head(baseBranch) !== baseSha)) return blocked("Candidate or stack base changed after local tests; rerun before deployment");
         ctx.phase("Deploy and smoke");
         let deployed = false;
         for (let attempt = 1; attempt <= maxDeploymentAttempts; attempt++) {
@@ -834,33 +861,33 @@ ${path.join(worktreeRoot, `devops-deploy-${round}-${attempt}`)}. ${writerRules}
 Your only writable assignment: ${JSON.stringify(plan.assignments.find((assignment) => assignment.role === "DevOps"))}.
 Never change or weaken Test-owned smoke tests to obtain a pass.
 Run configured static code scans, lint and formatting CHECKS. Any failure blocks deployment; never waive it.
-Use the project's existing GitHub Actions or local scripts/tools, and existing approval policies.
+${executionMode === "local" ? "Use locally installed project scripts/tools and the existing authenticated lab context, not GitHub Actions or remote CI." : "Use the project's existing GitHub Actions or local scripts/tools, and existing approval policies."}
 Run its provisioning/deployment plan or equivalent preview where supported, then its required
 provisioning/deployment implementation, including Terraform where required, within existing authorization.
-Deploy EXACTLY this candidate to ${deploymentTarget}; do not deploy an unrelated default-branch revision.
-If CI requires a PR first, cannot deploy this branch, or lacks approval, report DELIVERY blocked; do not bypass it.
-Wait for remote CI/deployment completion. Run Test-owned post-deploy smoke tests against the actual target.
-Evidence must identify target URL/environment, deployed SHA, CI run IDs/results and smoke commands/results.
+${liveSystem ? `Bring the current application at ${deploymentTarget} into the required working state. Do not add deployed-SHA or equivalent-fingerprint checks.` : `Deploy EXACTLY this candidate to ${deploymentTarget}; do not deploy an unrelated default-branch revision.`}
+${executionMode === "local" ? "Wait for the actual local provisioning/deployment operations to complete; report their real results." : "If CI requires a PR first, cannot deploy this branch, or lacks approval, report DELIVERY blocked; do not bypass it.\nWait for remote CI/deployment completion."}
+Run Test-owned post-deploy smoke tests against the actual target.
+${liveSystem ? "Evidence must identify the actual target URL/environment, operation results and smoke commands/results. No deployment identity artifact is required." : "Evidence must identify target URL/environment, deployed SHA, CI run IDs/results and smoke commands/results."}
 ${transportRules}
 Investigate and resolve Terraform or other provisioning/deployment failures within your owned files and existing
 authorization, retrying within the attempt budget. A tool failure alone does not require user intervention.
 If genuine user intervention or a scope/authorization decision is needed, return an evidenced DELIVERY blocker
 with attempted fixes and the required user action/decision. Never alter app requirements or peer files.
-Any code/script change must be committed/pushed to the same branch and sent back through local tests.
-Pass means deployment AND smoke passed; rework means a retryable failure, blocked means it needs intervention.`), plan);
+${liveSystem ? "Publish actual repairs to the same branch and rerun affected required tests before reporting success. Do not restart development merely because a source or deployment fingerprint changed." : "Any code/script change must be committed/pushed to the same branch and sent back through local tests."}
+Pass means deployment AND smoke passed; rework means a retryable failure, blocked means it needs intervention.`, evaluationSchema), plan, undefined, { liveSystem });
             await reconcile("deployment", deployment);
             if (deployment.status === "blocked") return blocked(deployment.summary, deployment);
-            if (await io.head(branch) !== sha) break;
-            if (deployment.sha !== sha) return blocked("Deployment evidence refers to another commit");
+            if (!liveSystem && await io.head(branch) !== sha) break;
+            if (!liveSystem && deployment.sha !== sha) return blocked("Deployment evidence refers to another commit");
             if (deployment.status === "pass") { deployed = true; break; }
         }
         if (!deployed) { outstanding = await io.issues(repo.nameWithOwner, label); continue; }
         ctx.phase("Deployed E2E");
         const e2e = validateReport(await agent("Test", `${round}:e2e`, `${candidate()}
-Independently verify deployed revision/environment and run ALL requirement-based E2E tests against
+${liveSystem ? "Independently verify the current running application's behavior and environment" : "Independently verify deployed revision/environment"} and run ALL requirement-based E2E tests against
 ${deploymentTarget}, not mocks or a local substitute. Return only evidenced failures against stated requirements.
 Use the approved registered transport when required; an unsupported service selection or missing access is DELIVERY blocked.
-Do not invent requirements or infer them from patterns/standards elsewhere.`), plan, sha);
+Do not invent requirements or infer them from patterns/standards elsewhere.`, evaluationSchema), plan, sha, { liveSystem });
         await reconcile("e2e", e2e);
         if (needsIntervention(e2e)) return blocked(e2e.summary, e2e);
         if (e2e.status !== "pass") { outstanding = await io.issues(repo.nameWithOwner, label); continue; }
@@ -869,9 +896,10 @@ Do not invent requirements or infer them from patterns/standards elsewhere.`), p
             && ["review", "review-wait", "budget"].some((stage) => item.body.includes(`\nStage: ${stage}\n`));
         // Review findings can only close after a fresh review of the repaired commit.
         if (outstanding.some((item) => !isDeferredReviewIssue(item))) continue;
-        if (await io.head(branch) !== sha || await io.head(baseBranch) !== baseSha) return blocked("Candidate or stack base changed after deployment/E2E");
+        if ((!liveSystem && await io.head(branch) !== sha) || await io.head(baseBranch) !== baseSha) return blocked("Candidate or stack base changed after deployment/E2E");
+        if (liveSystem) sha = await io.head(branch);
         ctx.phase("Review");
-        const pr = await agent("Architect", `${round}:pr`, `Tests/deployment passed at ${sha}; only prior review/control issues may remain.
+        const pr = await agent("Architect", `${round}:pr`, `${liveSystem ? "Current application tests/deployment passed" : `Tests/deployment passed at ${sha}`}; only prior review/control issues may remain.
 Create or reuse ONE open PR from ${branch} into ${baseBranch}, linking parent ${issue.url},
 design, requirement/test evidence and deployment evidence. Do not merge or close the parent.
 Use this exact base so reviewers see only this feature's diff, not all preceding features.
@@ -912,7 +940,7 @@ not unrelated enhancements. Distinguish current findings from outdated/resolved 
 an old finding without evidence it applies to this candidate. Document an evidenced disposition for every
 review/comment ID on the PR. No additional generic agent gh api permission is needed to read this payload.
 Do not fix code now or dismiss a real runtime/requirement failure to finish. Required policy/security gates
-still apply; an evidenced policy blocker is DELIVERY blocked, not an invented product requirement.`), plan, sha);
+still apply; an evidenced policy blocker is DELIVERY blocked, not an invented product requirement.`, evaluationSchema), plan, sha, { liveSystem });
         await reconcile("review", assessed);
         await reconcile("review-wait", {
             status: "pass", sha, summary: "Review received", findings: [], evidence: [review.html_url],

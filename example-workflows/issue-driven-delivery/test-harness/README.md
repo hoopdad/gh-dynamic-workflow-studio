@@ -8,6 +8,29 @@ Setup and teardown never build the application or invoke a model.
 The lifecycle entry point invokes the installed workflow; workflow agents alone
 own application implementation.
 
+New harness inputs select local tooling and live-system acceptance automatically:
+`executionMode:"local"` and `acceptanceMode:"live-system"`. The test application
+may keep web, API and agent as logical components in one container, without a
+mandatory frontend framework or Terraform stack. Existing model, storage,
+privacy, telemetry and aggregate-allowance requirements remain.
+Application acceptance uses current behavior and actual test results, not a
+deployed SHA or equivalent fingerprint. Git/runtime authorization identities
+remain separate from application acceptance.
+
+Each applied lifecycle writes `run-record.json` beside its original receipts,
+recording issue links, native identities, outcomes, findings and execution/cleanup
+errors. A process exit is not evidence of an intervention-free run; review the
+native event record for that conclusion. Historical requirements and failed
+receipts are never rewritten when the next test definition changes.
+
+For a final autonomy test ending with a running app, pass
+`-RetainSuccessfulApplication` to the fully qualified lifecycle script.
+Only successful delivery retains the app: the lifecycle says `delivered` and
+cleanup says `deferred`, never verified. Preserve ownership and allowance state
+for live assessment and subsequent scoped teardown before another clean test.
+Failed execution or completion still takes the existing guarded cleanup path.
+Without this switch, the original always-teardown behavior is unchanged.
+
 Run the offline checks **before** reset or delivery:
 
 ```powershell

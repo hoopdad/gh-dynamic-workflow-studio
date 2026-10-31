@@ -107,6 +107,8 @@ Check 'Setup generates exactly three stable ordered immutable parent requirement
     foreach ($parent in $parents) {
         if (-not $parent.body.StartsWith("<!-- lab-delivery-test:offline-123:$($parent.key) -->")) { throw 'Missing stable marker' }
         if ($parent.body -match 'Create a new VNet|Use a Foundry Hosted Agent') { throw 'Old application scope leaked' }
+        if ($parent.body -notmatch 'authenticated local tooling' -or $parent.body -notmatch 'logical components in one container' -or
+            $parent.body -match 'Implement Terraform and runnable') { throw 'Local minimal live-system definition missing' }
     }
     Check 'Setup reruns reuse exact existing parents and reject duplicates, changed requirements and closed parents' {
         $parent = @(Get-LabParentIssues 'offline-123')[0]
@@ -121,6 +123,37 @@ Check 'Setup generates exactly three stable ordered immutable parent requirement
         $existing.body = $parent.body
         $existing.state = 'CLOSED'
         Reject { Resolve-LabParentIssue $parent @($existing) 'offline-123' } 'requirements/state changed'
+    }
+}
+Check 'Run recording preserves blocked outcomes, issue identities and separate cleanup failure without deployment fingerprints' {
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) ("lab-run-record-" + [guid]::NewGuid().ToString('N'))
+    try {
+        $m = Fixture
+        $m.evidenceRoot = $temporary
+        $m.initialIssues = @(@{ key = 'A'; number = 91; url = 'https://github.com/example/app/issues/91' })
+        $m.delivery = @{ sessionId = 'fixture-session'; runId = 'fixture-run' }
+        $receipt = @{ startedAt = 'start'; completedAt = 'end'; status = 'failed'
+            setup = 'passed'; execution = 'failed'; teardown = 'failed'
+            errors = @(@{ stage = 'teardown'; message = 'CLOSURE_UNKNOWN' }) }
+        Write-LabJson (Join-Path $temporary 'workflow-result.json') @{
+            status = 'blocked'; summary = 'Native operation denied'
+            findings = @(@{ requirementId = 'DELIVERY'; owner = 'DevOps'; actual = 'denied' })
+        }
+        Write-LabRunRecord $m $receipt
+        $record = Get-Content -LiteralPath (Join-Path $temporary 'run-record.json') -Raw | ConvertFrom-Json -AsHashtable
+        Equal $record.workflowStatus 'blocked'
+        Equal $record.issues[0].number 91
+        Equal $record.runId 'fixture-run'
+        Equal $record.errors[0].message 'CLOSURE_UNKNOWN'
+        if ($record.Contains('sha')) { throw 'Application fingerprint should not be recorded' }
+        $m.Remove('initialIssues')
+        Remove-Item -LiteralPath (Join-Path $temporary 'workflow-result.json')
+        Write-LabRunRecord $m $receipt
+        $record = Get-Content -LiteralPath (Join-Path $temporary 'run-record.json') -Raw | ConvertFrom-Json -AsHashtable
+        Equal $record.issues.Count 0
+        Equal $record.workflowStatus $null
+    } finally {
+        if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse }
     }
 }
 Check 'Reference snapshots are explicit, hash-bound, non-executable and immutable' {
@@ -333,14 +366,17 @@ Check 'Repository preparation runs without deployment services while explicit pr
     }
 }
 function LifecycleCase {
-    param([string]$Failure, [switch]$CleanupFailure)
+    param([string]$Failure, [switch]$CleanupFailure, [switch]$Retain, [switch]$CompletionFailure)
     $trace = [Collections.Generic.List[string]]::new()
     $receiptPath = Join-Path ([IO.Path]::GetTempPath()) "lab-cycle-$([guid]::NewGuid().ToString('N')).json"
     try {
         $setup = { $trace.Add('setup'); if ($Failure -eq 'setup') { throw 'setup failure' } }.GetNewClosure()
         $execute = { $trace.Add('execute'); if ($Failure -eq 'execution') { throw 'execution failure' } }.GetNewClosure()
         $teardown = { $trace.Add('teardown'); if ($CleanupFailure) { throw 'cleanup failure' } }.GetNewClosure()
-        $result = Invoke-LabLifecycle -TestRunId 'offline-123' -Setup $setup -Execute $execute -Teardown $teardown -ReceiptPath $receiptPath
+        $onDelivered = if ($Retain) {
+            { $trace.Add('retain'); if ($CompletionFailure) { throw 'completion failure' } }.GetNewClosure()
+        } else { $null }
+        $result = Invoke-LabLifecycle -TestRunId 'offline-123' -Setup $setup -Execute $execute -Teardown $teardown -ReceiptPath $receiptPath -OnDelivered $onDelivered
         $saved = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -AsHashtable
         Equal @($saved.setup, $saved.execution, $saved.teardown, $saved.status) `
             @($result.setup, $result.execution, $result.teardown, $result.status)
@@ -355,6 +391,22 @@ Check 'A successful fresh cycle executes setup, delivery and teardown exactly on
     Equal $case.trace @('setup', 'execute', 'teardown')
     Equal $case.result.status 'passed'
     Equal $case.result.errors @()
+}
+Check 'Retention defers cleanup only after successful delivery and completion' {
+    $case = LifecycleCase -Retain
+    Equal $case.trace @('setup', 'execute', 'retain')
+    Equal $case.result.status 'delivered'
+    Equal $case.result.teardown 'deferred'
+    Equal $case.result.errors @()
+    $case = LifecycleCase -Retain -Failure execution
+    Equal $case.trace @('setup', 'execute', 'teardown')
+    Equal $case.result.status 'failed'
+    Equal $case.result.teardown 'passed'
+    $case = LifecycleCase -Retain -CompletionFailure
+    Equal $case.trace @('setup', 'execute', 'retain', 'teardown')
+    Equal $case.result.status 'failed'
+    Equal $case.result.errors[0].stage 'completion'
+    Equal $case.result.teardown 'passed'
 }
 Check 'Setup failure skips execution but still attempts teardown and persists the original failure' {
     $case = LifecycleCase -Failure setup
@@ -446,7 +498,7 @@ $global:labCycleTrace.Add('teardown')
         Remove-Item -LiteralPath $temporary -Recurse -Force
     }
 }
-foreach ($scenario in @('success', 'execution-failure')) {
+foreach ($scenario in @('success', 'retained-success', 'execution-failure')) {
     Check "Real stages retain helpers and reviewed child permissions in a fresh process ($scenario)" {
         $temporary = Join-Path ([IO.Path]::GetTempPath()) "lab-real-cycle-$([guid]::NewGuid().ToString('N'))"
         $harness = Join-Path $temporary 'harness'
@@ -540,7 +592,7 @@ function global:node {
     $runs = @()
     if ($global:invocations) {
         $runs = @(@{ sessionId = 'fixture-session'; runId = 'fixture-run'
-            status = $(if ($global:scenario -eq 'success') { 'completed' } else { 'error' }) })
+            status = $(if ($global:scenario -ne 'execution-failure') { 'completed' } else { 'error' }) })
     }
     return @{ runs = $runs; warnings = @() } | ConvertTo-Json -Depth 5
 }
@@ -564,7 +616,7 @@ function global:copilot {
     @{ schemaVersion = 1; testRunId = $global:fixture.testRunId; assets = @() } |
         ConvertTo-Json | Set-Content -LiteralPath $global:fixture.delivery.ownershipPath
     $global:LASTEXITCODE = 7
-    if ($global:scenario -eq 'success') {
+    if ($global:scenario -ne 'execution-failure') {
         $resultPath = $args[[Array]::IndexOf($args, '--result-file') + 1]
         '{"status":"done"}' | Set-Content -LiteralPath $resultPath
         $global:LASTEXITCODE = 0
@@ -573,8 +625,9 @@ function global:copilot {
 $runner = Join-Path $Harness 'Invoke-LabDeliveryTest.ps1'
 $before = (Get-FileHash -LiteralPath $ManifestPath).Hash
 $inspection = & $runner $global:fixture.testRunId $ManifestPath $null Inspect `
-    -PermissionProfilePath $profilePath | ConvertFrom-Json -AsHashtable
+    -PermissionProfilePath $profilePath -RetainSuccessfulApplication:($Scenario -ne 'success') | ConvertFrom-Json -AsHashtable
 if ($global:invocations -or $inspection.automaticMutations -or
+    $inspection.retainSuccessfulApplication -ne ($Scenario -ne 'success') -or
     (ConvertTo-Json -InputObject $inspection.permissionArguments -Compress) -cne
     (ConvertTo-Json -InputObject $global:expectedPermissionArguments -Compress)) {
     throw 'Inspection failed to preview the exact permissions without launching'
@@ -594,23 +647,29 @@ if ($invalidFailure -notmatch 'node failed' -or $global:invocations -or (Get-Fil
 $failure = $null
 try {
     & $runner -TestRunId $global:fixture.testRunId -ManifestPath $ManifestPath `
-        -PermissionProfilePath $profilePath -Mode Apply | Out-Null
+        -PermissionProfilePath $profilePath -Mode Apply -RetainSuccessfulApplication:($Scenario -ne 'success') | Out-Null
 } catch { $failure = $_.Exception.Message }
 $receipt = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'lifecycle-receipt.json') -Raw |
     ConvertFrom-Json -AsHashtable
 if ($global:invocations -ne 1) { throw "Workflow not invoked exactly once: $($receipt | ConvertTo-Json -Depth 10)" }
 $cleanup = Get-Content -LiteralPath (Join-Path $global:fixture.evidenceRoot 'cycle-teardown-receipt.json') -Raw |
     ConvertFrom-Json -AsHashtable
-if ($receipt.setup -cne 'passed' -or $receipt.teardown -cne 'passed' -or $cleanup.status -cne 'verified') {
+if ($receipt.setup -cne 'passed' -or
+    ($Scenario -eq 'retained-success' -and ($receipt.teardown -cne 'deferred' -or $cleanup.status -cne 'deferred')) -or
+    ($Scenario -ne 'retained-success' -and ($receipt.teardown -cne 'passed' -or $cleanup.status -cne 'verified'))) {
     throw "Real stage failure: $($receipt | ConvertTo-Json -Depth 10)"
 }
 $saved = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable
 if ($saved.delivery.runId -cne 'fixture-run' -or -not $saved.delivery.stopped) {
     throw 'Native observation did not retain the stopped run identity'
 }
-if ($Scenario -eq 'success') {
-    if ($failure -or $receipt.status -cne 'passed' -or $receipt.execution -cne 'passed' -or $receipt.errors.Count) {
+if ($Scenario -ne 'execution-failure') {
+    $expectedStatus = if ($Scenario -eq 'retained-success') { 'delivered' } else { 'passed' }
+    if ($failure -or $receipt.status -cne $expectedStatus -or $receipt.execution -cne 'passed' -or $receipt.errors.Count) {
         throw 'Successful real-stage fixture did not pass'
+    }
+    if ($Scenario -eq 'retained-success' -and -not (Test-Path -LiteralPath $global:fixture.delivery.ownershipPath)) {
+        throw 'Retained application ownership was removed'
     }
 } elseif (-not $failure -or $receipt.status -cne 'failed' -or $saved.delivery.exitCode -ne 7 -or
     $receipt.execution -cne 'failed' -or $receipt.errors.Count -ne 1 -or

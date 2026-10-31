@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string]$ManifestPath,
     [string]$ConfigurationPath,
     [ValidateSet('Inspect', 'Apply')][string]$Mode = 'Inspect',
-    [string]$PermissionProfilePath
+    [string]$PermissionProfilePath,
+    [switch]$RetainSuccessfulApplication
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -41,12 +42,14 @@ $receiptPath = Join-Path $manifest.evidenceRoot 'lifecycle-receipt.json'
 if (Test-Path -LiteralPath $receiptPath) { throw 'This cycle already has a receipt; do not silently repeat execution' }
 if ($Mode -eq 'Inspect' -or $WhatIfPreference) {
     @{ testRunId = $TestRunId; mode = 'inspection only'; repository = $manifest.repository
-        flow = @('setup', 'execute', 'teardown'); setup = @('Inventory', 'Reset', 'Bootstrap', 'Issues')
+        flow = @('setup', 'execute', $(if ($RetainSuccessfulApplication) { 'retain on success; teardown on failure' } else { 'teardown' }))
+        setup = @('Inventory', 'Reset', 'Bootstrap', 'Issues')
         permissionProfilePath = $PermissionProfilePath; permissionArguments = $permissionArguments
+        retainSuccessfulApplication = [bool]$RetainSuccessfulApplication
         resume = $false; receiptPath = $receiptPath; automaticMutations = $false } | ConvertTo-Json -Depth 5
     return
 }
-if (-not $PSCmdlet.ShouldProcess($TestRunId, 'Run fresh setup, one delivery and guarded teardown even on failure')) { return }
+if (-not $PSCmdlet.ShouldProcess($TestRunId, 'Run fresh setup, one delivery and guarded teardown on failure; retain success only when requested')) { return }
 
 [void][IO.Directory]::CreateDirectory($manifest.evidenceRoot)
 $lockPath = "$ManifestPath.cycle.lock"
@@ -96,33 +99,46 @@ try {
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
         if ($result.status -cne 'done') { throw "Workflow did not deliver the queue: $($result.status)" }
     }.GetNewClosure()
+    $finalize = {
+        $current = Read-LabManifest $TestRunId $ManifestPath
+        $observed = Assert-LabQuiescent $current -CurrentRunOnly
+        if ($current.delivery.Contains('executionRequested') -and $current.delivery.executionRequested) {
+            $baseline = Get-Content -LiteralPath $current.inventoryPath -Raw | ConvertFrom-Json -AsHashtable
+            $known = @($baseline.runs.runs | ForEach-Object runId)
+            $created = @($observed.runs | Where-Object { $_.runId -cnotin $known })
+            if ($created.Count -gt 1) { throw 'Multiple new workflow runs; ownership requires reconciliation' }
+            $current.delivery.started = $created.Count -eq 1
+            if ($created.Count) {
+                $current.delivery.sessionId = $created[0].sessionId
+                $current.delivery.runId = $created[0].runId
+                $current.delivery.status = $created[0].status
+            }
+        }
+        $current.delivery.stopped = $true
+        Write-LabJson $ManifestPath $current
+    }.GetNewClosure()
     $teardown = {
         try {
-            $current = Read-LabManifest $TestRunId $ManifestPath
-            $observed = Assert-LabQuiescent $current -CurrentRunOnly
-            if ($current.delivery.Contains('executionRequested') -and $current.delivery.executionRequested) {
-                $baseline = Get-Content -LiteralPath $current.inventoryPath -Raw | ConvertFrom-Json -AsHashtable
-                $known = @($baseline.runs.runs | ForEach-Object runId)
-                $created = @($observed.runs | Where-Object { $_.runId -cnotin $known })
-                if ($created.Count -gt 1) { throw 'Multiple new workflow runs; ownership requires reconciliation' }
-                $current.delivery.started = $created.Count -eq 1
-                if ($created.Count) {
-                    $current.delivery.sessionId = $created[0].sessionId
-                    $current.delivery.runId = $created[0].runId
-                    $current.delivery.status = $created[0].status
-                }
-            }
-            $current.delivery.stopped = $true
-            Write-LabJson $ManifestPath $current
+            & $finalize
         } finally {
             $result = & $teardownScript -TestRunId $TestRunId -ManifestPath $ManifestPath -Mode Apply |
                 ConvertFrom-Json -AsHashtable
             Write-LabJson (Join-Path $manifest.evidenceRoot 'cycle-teardown-receipt.json') $result
         }
     }.GetNewClosure()
-    $receipt = Invoke-LabLifecycle -TestRunId $TestRunId -Setup $setup -Execute $execute -Teardown $teardown -ReceiptPath $receiptPath
+    $onDelivered = if ($RetainSuccessfulApplication) {
+        {
+            & $finalize
+            Write-LabJson (Join-Path $manifest.evidenceRoot 'cycle-teardown-receipt.json') @{
+                testRunId = $TestRunId; status = 'deferred'; closure = 'application retained for live assessment'
+            }
+        }.GetNewClosure()
+    } else { $null }
+    $receipt = Invoke-LabLifecycle -TestRunId $TestRunId -Setup $setup -Execute $execute -Teardown $teardown -ReceiptPath $receiptPath -OnDelivered $onDelivered
+    $recordManifest = if (Test-Path -LiteralPath $ManifestPath) { Read-LabManifest $TestRunId $ManifestPath } else { $manifest }
+    Write-LabRunRecord $recordManifest $receipt
     $receipt | ConvertTo-Json -Depth 10
-    if ($receipt.status -cne 'passed') { throw "Test cycle failed; inspect $receiptPath for separate execution and teardown verdicts" }
+    if ($receipt.status -cnotin @('passed', 'delivered')) { throw "Test cycle failed; inspect $receiptPath for separate execution and teardown verdicts" }
 } finally {
     $env:AZURE_CONFIG_DIR = $oldAzure
     $env:AZURE_EXTENSION_USE_DYNAMIC_INSTALL = $oldExtensionInstall

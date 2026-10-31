@@ -88,6 +88,29 @@ not recommendations. Creating these files does not install or run the workflow.
    `done` means the queue is empty, not that PRs were approved or merged. PRs and
    parent issues remain open for the normal human review/merge/closure process.
 
+## Local lab and live-system acceptance
+
+Set `executionMode:"local"` to use authenticated local project tooling instead
+of GitHub Actions/remote CI. Set `acceptanceMode:"live-system"` to evaluate
+actual running behavior and required test results without requiring a deployed
+SHA or equivalent fingerprint. Local, deployment, E2E and review-assessment
+reports then need status, summary, findings and real evidence, but no application
+SHA. Missing or different fingerprints do not create repairs or restart
+development. Actual failed/unrun checks still cannot pass.
+
+Git commit IDs remain internal to source publication, PR review and native-stack
+membership; they are not proof of application status. The workflow reads the
+current feature head when opening the PR rather than requiring it to be an
+application identity artifact. Live-system journals use versioned `v4` keys;
+existing candidate-mode journals and the default behavior remain unchanged.
+
+These options do not add phases or readiness gates. DevOps chooses the smallest
+local deployment satisfying the requirements, discovers normal configuration
+and avoids invented operator-review flags, deployment fingerprints or additional
+path-approval schemas. Native authorization, protected shared resources and
+existing owner transport policies still apply. Neither option grants tooling
+or makes a denied operation successful.
+
 ## Stacked PR review and approval order
 
 The workflow uses [GitHub stacked pull requests](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests),

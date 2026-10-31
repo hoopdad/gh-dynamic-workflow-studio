@@ -81,7 +81,8 @@ function Invoke-LabLifecycle {
         [scriptblock]$Setup,
         [scriptblock]$Execute,
         [scriptblock]$Teardown,
-        [string]$ReceiptPath
+        [string]$ReceiptPath,
+        [scriptblock]$OnDelivered
     )
     $receipt = @{
         schemaVersion = 1; testRunId = $TestRunId
@@ -102,16 +103,27 @@ function Invoke-LabLifecycle {
         $receipt[$stage] = 'failed'
         $receipt.errors += @{ stage = $stage; message = $_.Exception.Message }
     } finally {
-        $receipt.teardown = 'running'
-        try {
-            & $Teardown | Out-Null
-            $receipt.teardown = 'passed'
-        } catch {
-            $receipt.teardown = 'failed'
-            $receipt.errors += @{ stage = 'teardown'; message = $_.Exception.Message }
+        if ($receipt.execution -ceq 'passed' -and $OnDelivered) {
+            try {
+                & $OnDelivered | Out-Null
+                $receipt.teardown = 'deferred'
+                $receipt.status = 'delivered'
+            } catch {
+                $receipt.errors += @{ stage = 'completion'; message = $_.Exception.Message }
+            }
         }
-        if ($receipt.setup -ceq 'passed' -and $receipt.execution -ceq 'passed' -and $receipt.teardown -ceq 'passed') {
-            $receipt.status = 'passed'
+        if ($receipt.status -cne 'delivered') {
+            $receipt.teardown = 'running'
+            try {
+                & $Teardown | Out-Null
+                $receipt.teardown = 'passed'
+            } catch {
+                $receipt.teardown = 'failed'
+                $receipt.errors += @{ stage = 'teardown'; message = $_.Exception.Message }
+            }
+            if ($receipt.setup -ceq 'passed' -and $receipt.execution -ceq 'passed' -and $receipt.teardown -ceq 'passed' -and -not $receipt.errors.Count) {
+                $receipt.status = 'passed'
+            }
         }
         $receipt.completedAt = [DateTime]::UtcNow.ToString('o')
         Write-LabJson $ReceiptPath $receipt
@@ -323,6 +335,11 @@ Use synthetic, non-sensitive notes only. Reuse the owner-verified shared West US
 .github/deployment-target.json; reference them without import/adoption, recreation or renumbering.
 Use a containerized agent calling an existing suitable Foundry deployment, not a Foundry Hosted Agent.
 Keep all backend components private; browser requests use the web-owned same-origin API proxy.
+Use authenticated local tooling, not GitHub Actions or remote CI. Choose the simplest implementation:
+web, API and agent may be logical components in one container; no frontend framework or separate
+services are required. Use Terraform only if the selected local deployment actually needs it.
+Judge current running behavior and real test results, not deployed SHAs, equivalent fingerprints
+or generated identity artifacts. Do not add operator-review flags or extra configuration gates.
 "@
     return @(
         @{ key = 'A'; title = 'Private walking skeleton'; body = @"
@@ -330,7 +347,7 @@ Build a minimal Note Assistant: browser -> web-owned same-origin API proxy -> AP
 agent -> existing Foundry model -> existing Blob Storage.
 
 Acceptance criteria:
-- Implement Terraform and runnable deploy/rollback commands using shared resources and the smallest needed app-specific additions.
+- Implement runnable local deploy/rollback commands using shared resources and the smallest needed app-specific additions.
 - Deploy private web, API and containerized agent components.
 - A user submits a short note in the browser, receives a concise real-model summary, and the original note/result are stored under the run-specific Blob namespace with a stable record ID.
 - Deployed acceptance exercises the real model and real storage, not mocks.
@@ -366,6 +383,35 @@ $common
         $_.body = "<!-- lab-delivery-test:$TestRunId`:$($_.key) -->`n$($_.body.Trim())"
         $_
     }
+}
+
+function Write-LabRunRecord {
+    param([Collections.IDictionary]$Manifest, [Collections.IDictionary]$Receipt)
+    $resultPath = Join-Path $Manifest.evidenceRoot 'workflow-result.json'
+    $result = if (Test-Path -LiteralPath $resultPath) {
+        Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
+    } else { @{} }
+    if ($result -isnot [Collections.IDictionary]) { $result = @{} }
+    $delivery = $Manifest['delivery']
+    if (-not $delivery) { $delivery = @{} }
+    $record = @{
+        schemaVersion = 1; testRunId = $Manifest.testRunId; repository = $Manifest.repository
+        recordedAt = [DateTime]::UtcNow.ToString('o')
+        startedAt = $Receipt.startedAt; completedAt = $Receipt.completedAt
+        lifecycleStatus = $Receipt.status
+        setup = $Receipt.setup; execution = $Receipt.execution; teardown = $Receipt.teardown
+        workflowStatus = $result['status']; summary = $result['summary']
+        sessionId = $delivery['sessionId']; runId = $delivery['runId']
+        issues = @($Manifest['initialIssues'] | Where-Object { $null -ne $_ } | ForEach-Object {
+            @{ key = $_.key; number = $_.number; url = $_.url }
+        })
+        findings = @($result['findings']); errors = @($Receipt.errors)
+        interventionAssessment = 'Not inferred from a successful process exit; review recorded native events'
+        evidence = @{ lifecycle = (Join-Path $Manifest.evidenceRoot 'lifecycle-receipt.json')
+            workflow = $(if (Test-Path -LiteralPath $resultPath) { $resultPath } else { $null })
+            ownership = $delivery['ownershipPath'] }
+    }
+    Write-LabJson (Join-Path $Manifest.evidenceRoot 'run-record.json') $record
 }
 
 function Publish-LabReferences {

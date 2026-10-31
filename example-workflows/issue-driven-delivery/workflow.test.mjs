@@ -99,7 +99,7 @@ function fixture(handler = () => undefined, ioOverrides = {}, args = {}) {
             scopedCalls.push(options.label);
             const label = options.label.replace(/^issue-\d+:/, "");
             calls.push(label);
-            const result = handler(label, prompt);
+            const result = handler(label, prompt, options);
             if (result !== undefined) return result;
             if (options.label.includes(":design:")) return makePlan();
             if (options.label.includes(":pr:")) return { number: 8 };
@@ -672,6 +672,58 @@ test("DevOps owns provisioning through deployment retries, blocks for interventi
     assert.equal((await changed.run()).status, "done");
     assert.ok(!changed.calls.includes("1:e2e:Test"));
     assert.ok(changed.calls.includes("2:local:Test"));
+});
+
+test("local live-system acceptance uses actual results without deployment fingerprints or fingerprint-driven repair", async () => {
+    let changed = false;
+    const published = "b".repeat(40);
+    const evaluations = [];
+    const f = fixture((label, prompt, options) => {
+        if (/:(local|deploy-\d+|e2e|review):/.test(`:${label}`)) {
+            evaluations.push(label);
+            assert.ok(!options.schema.required.includes("sha"));
+            assert.match(prompt, /Judge current behavior and actual test results/);
+            if (label.includes(":deploy-")) {
+                assert.match(prompt, /locally installed project scripts\/tools/);
+                assert.doesNotMatch(prompt, /Wait for remote CI\/deployment completion/);
+                assert.match(prompt, /Do not invent operator-filled deliveryPaths/);
+                changed = true;
+            }
+            const report = makeReport();
+            delete report.sha;
+            return report;
+        }
+    }, {
+        head: async (branch) => branch === "feature/issue-7" && changed ? published : sha,
+        pull: async () => ({
+            number: 8, state: "OPEN", headRefName: "feature/issue-7", baseRefName: "main",
+            headRefOid: published, isCrossRepository: false, body: f.bodies.get(8) ?? "",
+            url: "https://github.com/example/app/pull/8",
+        }),
+    }, { executionMode: "local", acceptanceMode: "live-system" });
+    const result = await f.run();
+    assert.equal(result.status, "done");
+    assert.equal(result.stack[0].sha, published);
+    assert.deepEqual(evaluations, ["1:local:Test", "1:deploy-1:DevOps", "1:e2e:Test", "1:review:Architect"]);
+    assert.ok(!f.calls.includes("2:design:Architect"));
+    assert.ok(f.calls.includes("finish"));
+});
+
+test("live-system acceptance still rejects missing execution evidence and routes real failed tests to repair", async () => {
+    const report = makeReport({ sha: "not-an-application-fingerprint" });
+    assert.equal(validateReport(report, makePlan(), sha, { liveSystem: true }), report);
+    assert.throws(() => validateReport({ ...report, evidence: [] }, makePlan(), undefined, { liveSystem: true }), /not a pass/);
+    const f = fixture(label => {
+        if (label === "1:local:Test") {
+            const failed = makeReport({ status: "rework", findings: [finding] });
+            delete failed.sha;
+            return failed;
+        }
+    }, {}, { executionMode: "local", acceptanceMode: "live-system", maxRounds: 1 });
+    assert.equal((await f.run()).status, "blocked");
+    assert.ok(f.calls.includes("file:local:R1"));
+    assert.ok(!f.calls.includes("1:deploy-1:DevOps"));
+    assert.ok(!f.calls.includes("finish"));
 });
 
 test("owner-managed transport is a conditional DevOps registration handoff, never a parallel tunnel", async () => {

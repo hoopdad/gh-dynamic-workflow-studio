@@ -305,6 +305,7 @@ Delivery source: $($manifest.sourceRevision). Test run: $TestRunId.
             deploymentTarget = $manifest.deploymentTarget; issueNumber = $recorded[0].number
             stackAfter = 0; worktreeRoot = $manifest.worktreeRoot
             ownership = @{ testRunId = $TestRunId; evidenceRoot = $manifest.evidenceRoot }
+            executionMode = 'local'; acceptanceMode = 'live-system'
         }
         $manifest.stages.issues = $true
         [void](Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'add', '--', '.github/delivery-input.json'))

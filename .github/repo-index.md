@@ -256,3 +256,19 @@ are not unattended-delivery-ready. Common rules require an actionable native
 capability blocker, not whole-client/UNC/interpreter expansion. Genuine npm
 test/run checks did execute. Existing prompt tests cover the stop contract;
 no paths, dependencies, profile grants or cleanup guards changed.
+
+2026-10-31: reviewed from `f73f83e` for local/live-system lab delivery.
+Optional `executionMode:"local"` selects existing authenticated local tooling;
+`acceptanceMode:"live-system"` removes application-fingerprint requirements
+from evaluation reports and fingerprint-only repair loops, with v4 journal keys.
+Default candidate-mode behavior and Git/PR/native-stack identities remain.
+The lab harness generates these options and permits one-container logical
+components without mandatory Terraform/frontend frameworks. Its applied cycle
+now emits `run-record.json` with issue/native identities, actual outcomes and
+errors, without claiming intervention-free execution from an exit code.
+Colocated tests cover live success, real failures and durable blocked records
+(28 inner PowerShell checks). Optional harness `-RetainSuccessfulApplication`
+keeps a delivered app for live assessment and records cleanup as deferred;
+failures and default runs retain existing guarded teardown.
+No added/deleted repository paths, dependencies,
+installer payload, native permission expansion or new readiness phase.
