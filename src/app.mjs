@@ -305,10 +305,14 @@ function renderTaskInspector(container, current) {
         const phase = current.phases.find((item) => item.id === agent.phaseId);
         const result = workOutcome(agent, { phase });
         inspectFields(container, cardFields(agent));
-        const summary = summarizeEvidence(result.summary);
+        const summary = agent.workResult?.kind === "report"
+            ? { description: result.summary, paragraphs: [] } : summarizeEvidence(result.summary);
         summary.title = result.title;
         appendSummary(container, summary, agent.workResult ? "RECORDED AGENT OUTCOME"
             : result.contextOnly ? "RECORDED TASK CONTEXT" : "RECORDED EXECUTION");
+        if (agent.workResult?.truncated) {
+            container.append(element("p", "Final response display truncated: at most 12,000 characters, 4,000 per structured field and 100 items per list.", "small muted"));
+        }
         const role = agent.label?.match(/:reviewer:([^:]+)/)?.[1];
         inspectFields(container, {
             Agent: role ? `${role} reviewer` : agent.agentType, Execution: agent.status,

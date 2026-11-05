@@ -28,7 +28,7 @@ legacy fingerprint-guarded workflow.
 ## Activity
 
 One **Activity** workspace shows both live and past runs: observed agent-task
-flowcharts with square activities, start/stop ovals, timing arrows and parallel
+flowcharts with compact rectangular activities, start/stop ovals, timing arrows and parallel
 rows; entered-phase filters, task cards, wall-time bars, effective limits,
 paginated progress and snapshot export.
 
@@ -99,7 +99,7 @@ remains read-only: collecting answers and resuming work in another session
 requires an authenticated connection to its owning runtime, not SQLite writes.
 
 Verbose context and
-outcomes use a local extractive summary: a few-word heading, a two-sentence
+legacy structured outcomes use a local extractive summary: a few-word heading, a two-sentence
 description and at most two paragraphs of five sentences each. Phase progress
 is never used as an attributed agent reply. Reviewer `agree:true` is report
 agreement, not an invented assignment PASS. Exact same-task/round owner outcomes
@@ -111,7 +111,15 @@ Supported final work responses supply the agent's summary or reviewer feedback.
 Scrum Master triage, Architect scope assessments and Product Owner scope
 decisions also display their retained structured outcomes, including required
 corrections, unresolved questions and reused dispositions. These are feedback
-coordination, not original acceptance votes. A retained unsupported response,
+coordination, not original acceptance votes. Lightweight delivery designs, bindings,
+findings/evidence reports, release/delivery/closure reports and plain-text final
+agent replies are also readable in the drawer. These show up to 12,000 characters
+of projected output without the extractive sentence cutoff; structured reports
+retain only allowlisted display fields (up to 4,000 characters each and 100 items
+per list), not arbitrary artifacts or issue bodies. A notice identifies truncation.
+Plain-text output is rendered literally, never as executable HTML.
+These reports remain unconfirmed rather than inventing acceptance from an empty
+findings list or absent blocker. A retained unsupported response,
 malformed structured response and missing final response have distinct notices;
 an unsupported display format does not imply the workflow lost its result.
 Unambiguous task/sprint IDs are expanded using names from the same run's
@@ -128,7 +136,7 @@ agent list before they start; they are not added to the observed-only flowchart.
 Paused/stale activity remains explicitly paused/unconfirmed. No prompts,
 intermediate messages or tool arguments are read to generate these summaries.
 
-Each process square and its drawer show the **LLM model**, **input tokens**,
+Each process card and its drawer show the **LLM model**, **input tokens**,
 **cached tokens** (cache reads), and **output tokens**, summed from exact
 per-agent `session.usage_record` records. Multiple observed models are listed,
 while a model known only from the requested configuration is marked requested.

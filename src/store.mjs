@@ -178,7 +178,7 @@ export class WorkflowStore {
                 result: json(row.result_json), error: row.error, failure: json(row.failure_json), reason: row.reason,
                 progress: { lines, hasOlder, oldestSeq: lines[0]?.seq ?? null },
                 terminal: terminalStatuses.has(row.status), liveAgentCount: agents.filter((agent) => activeStatuses.has(agent.status)).length,
-                notice: "Read-only local evidence. Session logs supply usage, exact agent attribution and structured final outcomes/task titles only. Prompts, reasoning, tool arguments, other message text and journal payloads are not retained or exposed. Agent completion alone is not review acceptance.",
+                notice: "Read-only local evidence. Session logs supply usage, exact agent attribution, bounded final agent responses and projected task titles only. Prompts, reasoning, tool arguments, intermediate messages, arbitrary report artifacts and journal payloads are not retained or exposed. Agent completion alone is not review acceptance.",
             };
         });
         detail.usageWarnings = [];
