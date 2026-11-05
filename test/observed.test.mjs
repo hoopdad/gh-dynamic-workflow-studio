@@ -92,9 +92,36 @@ test("renders only observed activities and interval-order fan-out/join, not the 
     const api = flow.nodes.find((node) => node.id === "agent:api");
     assert.equal(ui.y, api.y);
     assert.notEqual(ui.x, api.x);
-    assert.equal(ui.width, ui.height);
+    assert.ok(ui.height < ui.width);
+    const plan = flow.nodes.find((node) => node.id === "agent:plan");
+    assert.equal(ui.y - (plan.y + plan.height), 48);
     assert.equal(flow.nodes.at(-1).tone, "waiting");
     assert.ok(flow.edges.every((edge) => edge.kind === "timing"));
+});
+
+test("compact flow rows accommodate rich cards without overlapping later nodes", () => {
+    const flow = observedFlow(run([
+        { ...agent("rich", 2, 10), taskCard: workCard() },
+        agent("plain", 3, 10), agent("next", 11, 20),
+    ], { terminal: true, status: "completed" }));
+    const rich = flow.nodes.find((node) => node.id === "agent:rich");
+    const plain = flow.nodes.find((node) => node.id === "agent:plain");
+    const next = flow.nodes.find((node) => node.id === "agent:next");
+    assert.equal(rich.y, plain.y);
+    assert.ok(rich.height > plain.height);
+    assert.equal(next.y, rich.y + rich.height + 48);
+    assert.equal(flow.nodes.at(-1).y, next.y + next.height + 48);
+});
+
+test("final reports retain evidence and blockers without inventing acceptance", () => {
+    const record = { status: "completed", workResult: {
+        kind: "report", summary: "Evidence: Tests passed.\nNot independently verified.", blocked: false,
+    } };
+    assert.equal(workOutcome(record).title, "Final response recorded");
+    assert.equal(workOutcome(record).summary, record.workResult.summary);
+    assert.equal(outcome(record, { agent: true }).tone, "waiting");
+    record.workResult.blocked = true;
+    assert.equal(workOutcome(record).title, "Blocker reported");
 });
 
 test("keeps overlapping activity independent, handles ties, and ends only on retained terminal states", () => {

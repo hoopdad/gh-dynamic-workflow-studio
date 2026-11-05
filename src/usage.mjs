@@ -86,6 +86,52 @@ function projectCheckReview(result) {
     };
 }
 
+function projectDeliveryReport(result) {
+    if (!result || !text(result.blocker)) return null;
+    const strings = (value) => Array.isArray(value) && value.every(text);
+    const report = strings(result.evidence) &&
+        (result.findings === undefined || entries(result.findings, ["text", "area"]));
+    const design = text(result.summary) && entries(result.files, ["path", "operation", "purpose", "task"]) &&
+        entries(result.tasks, ["id", "description"]) && result.tasks.every((task) => strings(task.dependsOn));
+    const binding = text(result.root) && text(result.baseSha) && text(result.baseVersion) &&
+        Number.isSafeInteger(result.issue?.number) && text(result.issue.title) && text(result.issue.url);
+    if (!report && !design && !binding) return null;
+    let truncated = false;
+    const bounded = (value) => {
+        if (value.length > 4000) truncated = true;
+        return value.slice(0, 4000);
+    };
+    const items = (value) => {
+        if (value.length > 100) truncated = true;
+        return value.slice(0, 100);
+    };
+    const lines = [
+        ...(result.blocker.trim() ? [`Reported blocker: ${bounded(result.blocker)}`] : []),
+        ...(design ? [
+            bounded(result.summary),
+            ...items(result.files).map((file) =>
+                `File (${bounded(file.operation)}): ${bounded(file.path)}. ${bounded(file.purpose)}`),
+            ...items(result.tasks).map((task) =>
+                `Task ${bounded(task.id)}: ${bounded(task.description)}${task.dependsOn.length
+                    ? ` Depends on: ${items(task.dependsOn).map(bounded).join(", ")}` : ""}`),
+        ] : []),
+        ...(binding ? [`Issue ${result.issue.number}: ${bounded(result.issue.title)}`, bounded(result.issue.url),
+            `Checkout: ${bounded(result.root)}`, `Base SHA: ${bounded(result.baseSha)}`] : []),
+        ...(report ? [
+            ...items(result.findings ?? []).map((finding) =>
+                `Finding (${bounded(finding.area)}): ${bounded(finding.text)}`),
+            ...items(result.evidence).map((item) => `Evidence: ${bounded(item)}`),
+        ] : []),
+        ...["increment", "baseVersion", "version", "head", "url", "mergeCommit", "prState", "issueState"]
+            .filter((key) => text(result[key])).map((key) => `${key}: ${bounded(result[key])}`),
+        ...(!result.blocker.trim() ? ["No blocker reported; delivery is not independently verified."] : []),
+    ];
+    const summary = lines.join("\n");
+    return { kind: "report", summary: summary.slice(0, 12_000), truncated: truncated || summary.length > 12_000,
+        blocked: Boolean(result.blocker.trim()),
+        names: [], source: "Structured final agent response" };
+}
+
 function emptyState(stat) {
     return {
         dev: stat.dev, ino: stat.ino, size: 0, mtimeMs: null, offset: 0, discarding: false,
@@ -94,7 +140,7 @@ function emptyState(stat) {
 }
 
 function ingest(state, line) {
-    // Only usage, attribution and structured final work outcomes are projected.
+    // Only usage, attribution and final work outcomes are projected.
     if (!line.includes('"session.usage_record"') && !line.includes('"subagent.started"') &&
         !(line.includes('"assistant.message"') && line.includes('"final_answer"'))) return;
     let event;
@@ -125,6 +171,9 @@ function ingest(state, line) {
             if (content.includes("<<<WORKFLOW_JSON>>>") || content.trim().startsWith("{") || content.trim().startsWith("```json")) {
                 state.results.set(event.agentId, { kind: "unavailable", status: "malformed", names: [] });
                 state.warnings.add("Malformed structured final outcome was skipped; a work outcome may be unavailable.");
+            } else if (content.trim()) {
+                state.results.set(event.agentId, { kind: "report", summary: content.slice(0, 12_000),
+                    truncated: content.length > 12_000, blocked: false, names: [], source: "Final agent response" });
             }
             return;
         }
@@ -132,7 +181,11 @@ function ingest(state, line) {
         const review = result?.checksValid === undefined && typeof result?.agree === "boolean" && typeof result.feedback === "string";
         const work = ["complete", "rework", "needs-replan", "needs-input"].includes(result?.status) && typeof result.summary === "string";
         const governance = governanceResult(result);
-        if (!checkReview && !review && !work && !governance) return;
+        if (!checkReview && !review && !work && !governance) {
+            const report = projectDeliveryReport(result);
+            if (report) state.results.set(event.agentId, report);
+            return;
+        }
         const card = projectCard(result.workCard, state);
         if (checkReview) {
             state.results.set(event.agentId, { kind: "review", ...checkReview, names: [], assignments: [], card });
@@ -325,6 +378,10 @@ export function agentWork(state, runId, agent, agents = []) {
     if (result.kind === "governance" && agent.label?.match(/:governance:([^:]+):[^:]+:\d+$/)?.[1] !== result.stage) {
         return { taskTitle, taskCard: null, workResult: null, workOutcomeState: "unsupported" };
     }
+    if (result.kind === "report") return {
+        taskTitle, taskCard, taskCardSource: taskCard ? "Recorded assignment" : null,
+        workResult: { kind: "report", summary: result.summary, truncated: result.truncated, blocked: result.blocked, source: result.source },
+    };
     let summary = result.summary;
     const replacements = new Map(known);
     if (known.length) {

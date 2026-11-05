@@ -360,3 +360,79 @@ test("distinguishes missing, unsupported and malformed final responses and repla
     await appendFile(file, lines([workEvent("fixed", "bad", { status: "complete", summary: "Fixed.", artifact: {} })]));
     assert.equal(agentWork(await reader.read(file), "run", { id: "bad" }).workResult.summary, "Fixed.");
 });
+
+test("projects lightweight delivery reports, designs and bindings without arbitrary artifacts or issue bodies", async (t) => {
+    const file = await logFixture(t);
+    const reports = [
+        { findings: [{ text: "Handle a missing value.", area: "implementation", secret: "PRIVATE-FINDING" }],
+            blocker: "", evidence: ["Tests passed."], artifact: { secret: "PRIVATE-ARTIFACT" } },
+        { summary: "Compact task cards.", blocker: "", increment: "patch",
+            files: [{ path: "src\\app.mjs", operation: "update", purpose: "Display outcomes.", task: "ui" }],
+            tasks: [{ id: "ui", description: "Test the drawer.", dependsOn: [] }] },
+        { blocker: "", root: "C:\\project", baseSha: "abc", baseVersion: "1.0.0",
+            issue: { number: 1, title: "Repair output", url: "https://github.com/example/project/issues/1", body: "PRIVATE-ISSUE-BODY" } },
+        { blocker: "Approval required.", evidence: ["Release not delivered."], baseVersion: "1.0.0", version: "1.0.1" },
+        { findings: [], blocker: "", evidence: ["PR published."], head: "abc", url: "https://github.com/example/project/pull/2" },
+        { blocker: "", evidence: ["Closure observed."], mergeCommit: "def", prState: "MERGED", issueState: "CLOSED" },
+    ];
+    await writeFile(file, lines(reports.flatMap((report, i) => [
+        started(`agent-${i}`, `call-${i}`), workEvent(`report-${i}`, `agent-${i}`, report),
+    ])));
+    const state = await new UsageReader().read(file);
+    const projected = reports.map((_, i) => agentWork(state, "run", { id: `call-${i}` }).workResult);
+    assert.ok(projected.every((result) => result.kind === "report" && result.source === "Structured final agent response"));
+    assert.match(projected[0].summary, /Finding \(implementation\): Handle a missing value.*\nEvidence: Tests passed/);
+    assert.match(projected[1].summary, /Compact task cards[\s\S]*src\\app.mjs[\s\S]*Test the drawer/);
+    assert.match(projected[2].summary, /Issue 1: Repair output[\s\S]*Checkout: C:\\project/);
+    assert.equal(projected[3].blocked, true);
+    assert.match(projected[3].summary, /Approval required/);
+    assert.match(projected[4].summary, /head: abc[\s\S]*pull\/2/);
+    assert.match(projected[5].summary, /mergeCommit: def[\s\S]*issueState: CLOSED/);
+    assert.equal(agentWork(state, "other-run", { id: "call-0" }).workResult, null);
+    assert.doesNotMatch(JSON.stringify([...state.results]), /PRIVATE-/);
+});
+
+test("reads bounded plain final replies only and updates them incrementally", async (t) => {
+    const file = await logFixture(t);
+    const reply = (content, extra = {}) => ({ type: "assistant.message", agentId: "agent",
+        data: { phase: "final_answer", content, ...extra } });
+    await writeFile(file, lines([
+        started("agent", "call"), reply("PRIVATE-COMMENTARY", { phase: "commentary" }),
+        reply("PRIVATE-TOOL", { toolRequests: [{ name: "test" }] }),
+        { type: "assistant.message", data: { phase: "final_answer", content: "PRIVATE-PARENT" } },
+        reply("Implemented the fix.\nEvidence: <script>not executable</script>"),
+    ]));
+    const reader = new UsageReader();
+    const state = await reader.read(file);
+    assert.equal(agentWork(state, "run", { id: "call" }).workResult.summary,
+        "Implemented the fix.\nEvidence: <script>not executable</script>");
+    assert.equal(agentWork(state, "run", { id: "call" }).workResult.source, "Final agent response");
+    assert.equal(agentWork(state, "run", { id: "call" }).workResult.truncated, false);
+    assert.doesNotMatch(JSON.stringify([...state.results]), /PRIVATE-/);
+    await appendFile(file, lines([reply("x".repeat(13_000))]));
+    const bounded = agentWork(await reader.read(file), "run", { id: "call" }).workResult;
+    assert.equal(bounded.summary.length, 12_000);
+    assert.equal(bounded.truncated, true);
+    await appendFile(file, lines([reply("[Summary] Final reply remains readable.")]));
+    assert.equal(agentWork(await reader.read(file), "run", { id: "call" }).workResult.summary, "[Summary] Final reply remains readable.");
+    await appendFile(file, lines([reply("```json\n{broken\n```")]));
+    assert.equal(agentWork(await reader.read(file), "run", { id: "call" }).workOutcomeState, "malformed");
+});
+
+test("flags report field/list/total truncation and keeps the blocker ahead of long evidence", async (t) => {
+    const file = await logFixture(t);
+    await writeFile(file, lines([
+        workEvent("field", "field", { findings: [], blocker: "", evidence: ["x".repeat(4001)] }),
+        workEvent("list", "list", { findings: [], blocker: "", evidence: Array(101).fill("Checked.") }),
+        workEvent("total", "total", { findings: [], blocker: "Approval required.", evidence: Array(4).fill("x".repeat(4000)) }),
+        workEvent("bad", "bad", { findings: [{ text: {}, area: "implementation" }], blocker: "", evidence: ["Checked."] }),
+    ]));
+    const state = await new UsageReader().read(file);
+    for (const id of ["field", "list", "total"]) {
+        assert.equal(agentWork(state, "run", { id }).workResult.truncated, true);
+    }
+    const total = agentWork(state, "run", { id: "total" }).workResult;
+    assert.equal(total.summary.length, 12_000);
+    assert.match(total.summary, /^Reported blocker: Approval required/);
+    assert.equal(agentWork(state, "run", { id: "bad" }).workOutcomeState, "unsupported");
+});

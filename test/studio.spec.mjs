@@ -155,6 +155,50 @@ test("renders completed governance outcomes rather than missing-result warnings"
     }
 });
 
+test("displays lightweight and plain final output in the live drawer without summary loss or HTML execution", async ({ page }) => {
+    const local = await fixture();
+    let instance;
+    try {
+        local.mutate((db) => db.exec("UPDATE workflow_agents SET status='completed' WHERE run_id='live-run'"));
+        const file = path.join(path.dirname(local.dbFile), "events.jsonl");
+        const evidence = Array.from({ length: 16 }, (_, i) => `Check ${i} passed.`);
+        evidence.push('<script>globalThis.injected=true</script> Final evidence is retained.');
+        await appendFile(file, JSON.stringify(workEvent("report", "a1", {
+            findings: [{ area: "implementation", text: "Acceptance is not independently verified." }],
+            blocker: "", evidence, artifact: { secret: "PRIVATE-ARTIFACT" },
+        })) + "\n");
+        instance = await startStudio(local.project, { sessionsRoot: local.sessionsRoot });
+        await page.goto(instance.url);
+        const task = page.locator('[data-task="agent:a1"]');
+        expect((await task.boundingBox()).height).toBeLessThan(180);
+        await task.click();
+        const details = page.locator("#task-details");
+        await expect(details).toContainText("Final response recorded");
+        for (const item of evidence) await expect(details).toContainText(item);
+        await expect(details).not.toContainText("Work outcome unavailable");
+        await expect(details).not.toContainText("PRIVATE-ARTIFACT");
+        expect(await page.evaluate(() => globalThis.injected)).toBeUndefined();
+        await appendFile(file, JSON.stringify({ type: "assistant.message", agentId: "a1",
+            data: { phase: "final_answer", content: "Plain final reply.\nThe output remains readable after refresh." } }) + "\n");
+        await expect(details).toContainText("The output remains readable after refresh.", { timeout: 6000 });
+        await expect(page.locator("#task-drawer")).toBeVisible();
+        await page.setViewportSize({ width: 390, height: 800 });
+        await expect(details).toContainText("Plain final reply.");
+        expect(await details.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+        await appendFile(file, JSON.stringify(workEvent("bounded-report", "a1", {
+            findings: [], blocker: "Approval required.", evidence: ["x".repeat(4001)],
+        })) + "\n");
+        await expect(details).toContainText("Final response display truncated", { timeout: 6000 });
+        await expect(details).toContainText("Reported blocker: Approval required.");
+        await expect(details).toContainText("Blocker reported");
+        await expect(page.locator("#error")).toBeHidden();
+    } finally {
+        await page.close();
+        await instance?.close();
+        await local.cleanup();
+    }
+});
+
 test("shows a work-conserving waiting checkpoint without claiming delivery or a live pause", async ({ page }) => {
     const local = await fixture();
     let instance;
@@ -733,7 +777,7 @@ test("grows an observed-only parallel flow, keeps task cards live, queries evide
         const api = page.locator('[data-task="agent:api"]');
         expect((await ui.boundingBox()).y).toBe((await api.boundingBox()).y);
         const box = await ui.boundingBox();
-        expect(box.width).toBe(box.height);
+        expect(box.height).toBeLessThan(box.width);
         await expect(ui).toContainText("Assigned Work UI Developer doer");
         await ui.click();
         await expect(page.locator("#task-details")).toContainText("workflow-doer");

@@ -82,6 +82,13 @@ snapshot/progress reads and discovery refresh; no Design/preview/source APIs.
 
 ## Freshness
 
+2026-11-05: reviewed from `004bce9` for compact task rectangles and row heights
+in `src/observed.mjs`, plus bounded lightweight delivery report/plain final-response
+projection in `src/usage.mjs` and unabridged projected report display in the drawer.
+`test/usage.test.mjs`, `observed.test.mjs` and `studio.spec.mjs` cover attribution,
+projection boundaries, evidence retention, literal rendering and compact layout.
+No paths added/deleted, new dependencies or workflow control-plane changes.
+
 2026-11-05: reviewed from `2ce1fa5` plus the lightweight example changes for
 plugin-first onboarding, release 0.2.0 and main integration. Added root
 `plugin.json`, `.github/plugin/marketplace.json`,

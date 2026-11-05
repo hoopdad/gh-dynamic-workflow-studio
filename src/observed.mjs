@@ -94,6 +94,11 @@ export function tokenText(value) {
 
 export function workOutcome(agent, { phase } = {}) {
     const work = agent.workResult;
+    if (work?.kind === "report") return {
+        title: work.blocked ? "Blocker reported" : "Final response recorded",
+        summary: work.summary,
+        tone: "waiting",
+    };
     if (work?.kind === "governance") return {
         title: { triage: "Feedback reconciled", "scope-advice": "Scope advice recorded", "scope-decision": "Scope decision recorded" }[work.stage],
         summary: `${work.summary}\nRead-only feedback coordination, not an original acceptance vote or proof of task completion.`,
@@ -259,13 +264,18 @@ export function observedFlow(run) {
         levels.get(node.level).push(node);
     }
     const width = Math.max(340, ...[...levels.values()].map((row) => row.length * 312 + 24));
+    let y = 24;
     for (const row of levels.values()) {
         row.forEach((node, index) => {
             node.width = node.kind === "task" ? 280 : 170;
-            node.height = node.kind === "task" ? 280 : 58;
+            const card = node.agent && cardContext(node.agent);
+            node.height = node.kind === "task" ? 168 +
+                (card && cardScope(node.agent) ? 34 : 0) +
+                (card?.failureCategories.length ? 34 : 0) + (card?.mustAct ? 20 : 0) : 58;
             node.x = (width - row.length * 312) / 2 + index * 312 + (312 - node.width) / 2;
-            node.y = node.level === 0 ? 24 : 138 + (node.level - 1) * 340;
+            node.y = y;
         });
+        y += Math.max(...row.map((node) => node.height)) + 48;
     }
     return { nodes, edges, width, height: Math.max(...nodes.map((node) => node.y + node.height)) + 24 };
 }
