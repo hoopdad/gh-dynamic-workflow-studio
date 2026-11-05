@@ -6,7 +6,8 @@ run history and phase inspection. It does not inspect or edit workflow source.
 
 ## Open Studio
 
-Follow the [standalone installation and launch instructions](../README.md).
+Start with the [plugin quickstart](../README.md); see the
+[manual](../manual.md) for standalone installation and launch alternatives.
 Requires Node.js 24 with `node:sqlite`; the Copilot canvas also requires the
 experimental `createCanvas` API. Standalone browser mode does not need the SDK.
 The installed registration is `dynamic-workflow-studio`. It does not register

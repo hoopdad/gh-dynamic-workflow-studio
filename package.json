@@ -1,6 +1,6 @@
 {
   "name": "dynamic-workflow-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Read-only workflow observation and historical results for GitHub Copilot CLI.",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,10 @@
     "src/",
     "scripts/install.mjs",
     "docs/studio.md",
+    "manual.md",
+    "plugin.json",
+    ".github/plugin/marketplace.json",
+    "com.github.copilot/",
     "extension.mjs",
     "npm-shrinkwrap.json"
   ],

@@ -126,7 +126,7 @@ When it finishes, report its actual outcome and stop. Tell the operator to use /
             Write-LabJson $resultPath $outcome.result
         }
         $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -AsHashtable
-        if ($result.status -cne 'done') { throw "Workflow did not deliver the queue: $($result.status)" }
+        if ($result.status -cne 'completed') { throw "Workflow did not deliver the selected issue: $($result.status)" }
     }.GetNewClosure()
     $finalize = {
         $current = Read-LabManifest $TestRunId $ManifestPath

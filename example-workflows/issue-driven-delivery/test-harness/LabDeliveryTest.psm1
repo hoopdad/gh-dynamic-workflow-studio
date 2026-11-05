@@ -361,7 +361,7 @@ $common
 Extend the private walking skeleton without replacing its infrastructure.
 
 Acceptance criteria:
-- Exercise Architect -> UI/UX Designer -> Web. Publish the designer-owned artifact before implementation; Web treats it as authoritative within issue scope, architecture contracts and repository policy.
+- Include note-history interaction design in the solution proposal and implement it consistently within issue scope and repository policy.
 - Provide note submission and loading, success, error and empty states, a saved-note list and record detail.
 - Saved records survive page reload and are read from real storage.
 - Keep browser/API calls same-origin and backend components private.
@@ -401,6 +401,8 @@ function Write-LabRunRecord {
         lifecycleStatus = $Receipt.status
         setup = $Receipt.setup; execution = $Receipt.execution; teardown = $Receipt.teardown
         workflowStatus = $result['status']; summary = $result['summary']
+        reason = $result['reason']; branch = $result['branch']; url = $result['url']
+        version = $result['version']; nativeEvidence = @($result['evidence'])
         sessionId = $delivery['sessionId']; runId = $delivery['runId']
         issues = @($Manifest['initialIssues'] | Where-Object { $null -ne $_ } | ForEach-Object {
             @{ key = $_.key; number = $_.number; url = $_.url }

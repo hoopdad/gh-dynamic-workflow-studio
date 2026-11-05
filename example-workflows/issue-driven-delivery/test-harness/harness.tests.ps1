@@ -102,7 +102,7 @@ Check 'Setup generates exactly three stable ordered immutable parent requirement
     Equal $parents.Count 3
     Equal @($parents.key) @('A', 'B', 'C')
     Equal $parents @(Get-LabParentIssues 'offline-123')
-    if ($parents[0].body -notmatch 'containerized agent' -or $parents[1].body -notmatch 'Architect -> UI/UX Designer -> Web' -or
+    if ($parents[0].body -notmatch 'containerized agent' -or $parents[1].body -notmatch 'note-history interaction design' -or
         $parents[2].body -notmatch 'Invalid requests never invoke the model or write records') { throw 'Required acceptance flow missing' }
     foreach ($parent in $parents) {
         if (-not $parent.body.StartsWith("<!-- lab-delivery-test:offline-123:$($parent.key) -->")) { throw 'Missing stable marker' }
@@ -136,12 +136,15 @@ Check 'Run recording preserves blocked outcomes, issue identities and separate c
             setup = 'passed'; execution = 'failed'; teardown = 'failed'
             errors = @(@{ stage = 'teardown'; message = 'CLOSURE_UNKNOWN' }) }
         Write-LabJson (Join-Path $temporary 'workflow-result.json') @{
-            status = 'blocked'; summary = 'Native operation denied'
-            findings = @(@{ requirementId = 'DELIVERY'; owner = 'DevOps'; actual = 'denied' })
+            status = 'blocked'; reason = 'Native operation denied'; branch = 'issue-delivery/91-test'
+            url = 'https://github.com/example/app/pull/92'
         }
         Write-LabRunRecord $m $receipt
         $record = Get-Content -LiteralPath (Join-Path $temporary 'run-record.json') -Raw | ConvertFrom-Json -AsHashtable
         Equal $record.workflowStatus 'blocked'
+        Equal $record.reason 'Native operation denied'
+        Equal $record.branch 'issue-delivery/91-test'
+        Equal $record.url 'https://github.com/example/app/pull/92'
         Equal $record.issues[0].number 91
         Equal $record.runId 'fixture-run'
         Equal $record.errors[0].message 'CLOSURE_UNKNOWN'
@@ -594,7 +597,7 @@ function global:node {
             throw 'Interactive result was not read from its exact owning session'
         }
         return @{ sessionId = $global:interactiveSession; runId = 'fixture-run'
-            status = 'completed'; stale = $false; result = @{ status = 'done' }; error = $null } | ConvertTo-Json -Depth 5
+            status = 'completed'; stale = $false; result = @{ status = 'completed' }; error = $null } | ConvertTo-Json -Depth 5
     }
     $runs = @()
     if ($global:invocations) {
@@ -613,6 +616,13 @@ function global:copilot {
     $global:invocations++
     if ($global:invocations -ne 1 -or ($global:scenario -ne 'interactive-success' -and $args -notcontains 'issue-driven-delivery')) {
         throw 'Unexpected fixture workflow invocation'
+    }
+    $inputData = Get-Content -LiteralPath (Join-Path $global:fixture.repositoryRoot '.github\delivery-input.json') -Raw |
+        ConvertFrom-Json -AsHashtable
+    if (($inputData.Keys | Sort-Object) -join ',' -cne 'base,delivery,issue,repository' -or
+        $inputData.repository -cne $global:fixture.repository -or $inputData.issue -ne 101 -or
+        $inputData.base -cne $global:fixture.defaultBranch -or $inputData.delivery -cne 'pr') {
+        throw 'Harness did not hand off the single-issue workflow contract'
     }
     $expected = @($global:expectedPermissionArguments) + @('-C', $global:fixture.repositoryRoot)
     if ($global:scenario -eq 'interactive-success') {
@@ -638,7 +648,7 @@ function global:copilot {
     if ($global:scenario -ne 'execution-failure') {
         if ($global:scenario -ne 'interactive-success') {
             $resultPath = $args[[Array]::IndexOf($args, '--result-file') + 1]
-            '{"status":"done"}' | Set-Content -LiteralPath $resultPath
+            '{"status":"completed"}' | Set-Content -LiteralPath $resultPath
         }
         $global:LASTEXITCODE = 0
     }

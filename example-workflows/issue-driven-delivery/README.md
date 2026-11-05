@@ -1,269 +1,156 @@
-# Issue-driven delivery
+# Lightweight issue-driven delivery
 
 A runnable, opt-in [Copilot Dynamic Workflow](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/dynamic-workflows).
-This is JavaScript using `defineWorkflow`, not a GitHub Actions YAML workflow.
-This folder is a self-contained package for installation into **another
-repository**, not a workflow used by this Studio repository. No Studio source,
-root package, npm dependencies or root test/check configuration is needed.
+This is JavaScript using `defineWorkflow`, not GitHub Actions YAML or an issue
+watcher. It delivers **one explicitly selected issue** through design,
+implementation, verification and a feature-branch PR. PR-only delivery is the
+default; explicit merge mode can finish delivery and verify issue closure.
 
-The example preserves the requested flow, **including concurrent pushes to one
-feature branch and deployment before PR review**. Those are deliberate risks,
-not recommendations. Creating these files does not install or run the workflow.
+This self-contained example installs into **another repository**. It is not
+used by Studio and imports no Studio code, npm dependencies or root test
+configuration. Creating or installing these files does not run the workflow.
 
-## Flow
+## Simplified SDLC
 
-1. Select the oldest open issue labeled `workflow:ready`, or an explicit starting
-   issue number. Work on one parent at a time, then scan again at step 9.
-2. Architect creates `feature/issue-N` in the target application repository and commits a
-   design there. On repair rounds, Architect updates that design on the same
-   branch. The first feature starts from the default branch; later features start
-   from the preceding feature's tested branch/SHA. Requirements get stable IDs
-   quoting that parent issue verbatim.
-3. Architect enumerates every affected tier, folder, existing/new file, shared
-   contract and dependency. Each file has exactly one owner, including manifests,
-   lockfiles, generated files, test fixtures and delivery scripts. The design
-   document belongs to Architect. Missing tiers get explicit no-work assignments.
-   Required provisioning/IaC files belong exclusively to DevOps, including
-   Terraform where required. Infrastructure gets only distinct non-provisioning
-   work and remains inactive if none exists.
-   Architect also decides whether the issue needs a **UI/UX Designer**, with an
-   explicit reason for selecting or skipping it.
-4. Web, API, Infrastructure, Agent, Test and DevOps run concurrently in separate
-   contexts and isolated worktrees. Every active writer commits and pushes its
-   own work to the **same remote feature branch**. No shared checkout/index.
-   - If selected, **UI/UX Designer runs first**, receiving Architect's plan,
-     requirement IDs, narrow task and exclusively owned design artifact paths.
-     The designer commits/pushes the design; the workflow verifies its inclusion
-     and nonempty artifacts before launching any implementation writer.
-     Web starts from that published revision and treats the UI/UX design as
-     **authoritative**, not optional inspiration. Conflicts with issue scope,
-     architecture contracts or existing policies block for Architect replanning,
-     never silent redesign. Designer failures enter the same scoped repair loop;
-     once selected, design stays enabled through repair rounds.
-   - If skipped, no designer agent or design phase runs. The six-writer fan-out
-     and concurrency limit are unchanged.
-   - Test writes requirement-traceable local tests, local/deployed E2E and
-     post-deployment smoke tests.
-   - DevOps writes the project's required provisioning/deployment implementation
-     (including Terraform where required) and scan, lint, formatting-check,
-     CI/deploy/rollback tooling using the project's existing tooling preference.
-     No provisioning or deployment runs during this development phase.
-5. After the parallel barrier, Test executes all local tests. Demonstrated
-   requirement failures and runtime errors on required flows become repair issues
-   identifying the requirement, tier owner, expected/actual behavior and evidence.
-6. DevOps runs static scans/lint/format checks, the project's provisioning/deployment
-   plan or equivalent preview where supported, then required provisioning and
-   deployment of the tested revision. It waits for CI/deployment completion and
-   runs Test's smoke tests. DevOps investigates and resolves Terraform or other
-   deployment failures within owned files and existing authorization; retries
-   are bounded. Any committed fix goes back through design/local tests.
-   Genuine user intervention or scope/authorization decisions become evidenced
-   operational blockers with required user action, not new application requirements.
-   Azure role assignments/definitions remain external operator prerequisites;
-   failed access is not permission to self-grant through CLI or IaC. For targets
-   requiring an approved owner-managed private transport, DevOps prepares an
-   application-side registration packet from actual deployed ARM/host metadata.
-   Unsupported owner selections block with the required registration handoff,
-   not a second tunnel or implicit edits to the owner's repository.
-7. Test independently runs requirement-based E2E against the deployed target.
-   Failures become scoped repair issues, not invented acceptance criteria.
-8. Architect replans outstanding work and repeats steps 2-7. When application
-   repair issues are resolved, Architect creates/reuses a PR. The workflow
-   targets the preceding feature branch (or the default branch for the bottom
-   PR), registers/extends its **native GitHub stack** once two PRs exist,
-   publishes its stack position and dependency order, then requests GitHub
-   Copilot review and waits for a **submitted review of the
-   exact tested SHA**. The trusted read-only GitHub adapter paginates review bodies
-   and all inline comments/replies and supplies them to Architect as untrusted
-   evidence, without agent `gh api` grants. Architect dispositions every review/
-   comment ID, considering older-SHA context; inaccessible or incomplete data
-   cannot pass. Actionable
-   findings return through the same design/build/test/deploy loop.
-9. When local tests, deployment/smoke, deployed E2E and assessed Copilot review
-   pass at an unchanged candidate with no scoped repair issues, mark this
-   feature ready for human approval. Update the ordered stack table in every
-   PR, remove this issue's ready-queue label, and **return to step 1 for the next
-   issue**. Its branch and PR base are the preceding feature branch. Continue
-   until the ready queue is empty; a blocked feature stops further intake.
-   `done` means the queue is empty, not that PRs were approved or merged. PRs and
-   parent issues remain open for the normal human review/merge/closure process.
+1. **Read issue and branch.** Read the selected issue and target repository
+   guidance, fetch the destination SHA/release version and create
+   `issue-delivery/<issue>-<run hash>`. Use a dedicated checkout/worktree,
+   preserve unrelated edits and never edit/push the protected base.
+2. **Propose the solution and plan together.** One owner supplies the smallest
+   complete solution, a CRUD table of exact relative paths, purpose and task
+   ownership, and tasks with real dependencies. Small changes use one owner
+   task including tests. Split only genuinely independent work. The workflow
+   computes the critical path; no requirement-ID matrix or model-provided
+   longest-chain proof is required. CRUD paths are guidance, not an execution
+   allowlist.
+3. **Review the proposal once per revision.** One independent reviewer covers
+   issue scope, unchanged risk/authority and applicable conventions together.
+   Proposed files or functionality need not exist yet; an empty implementation
+   diff is not a design failure. Actionable findings return to design.
+4. **Implement and test.** The owner implements the proposal and focused
+   regressions and updates existing project records according to repository
+   conventions. Independent specialists use real dependencies and do not edit
+   each other's files; one integration owner handles shared config/tests and
+   remaining findings. Necessary related files are allowed and reviewed
+   normally. Redesign cleans up obsolete edits by inspecting the actual diff,
+   not by blindly restoring files absent from the latest plan.
+5. **Prepare the release and verify.** Apply one SemVer bump against the latest
+   destination release, using the target's canonical version source, existing
+   records and affected release documentation. Run its documented verification
+   and build commands using its existing tooling. Do not require npm, specific
+   document names, new bookkeeping files or unrelated package/protocol bumps.
+   Retries do not repeatedly bump the edited feature version. A destination
+   advancing is normal; ordinary check failures return to implementation.
+6. **Review actual code.** One independent code reviewer examines the final
+   diff, requirement coverage, security/conventions, tests and release/check
+   evidence. Ordinary bugs return directly to implementation and verification.
+   Only genuine requirements, architecture or technology-risk changes return
+   to design, not incidental files absent from the initial CRUD table.
+7. **Deliver and verify together.** Inspect native Git/PR state, commit the
+   reviewed issue changes with repository-required trailers if needed, push
+   the explicit feature ref without force and create/reuse its matching open
+   PR. Verify remote SHA, repository, PR head/base and the explicit
+   `Closes https://github.com/OWNER/REPOSITORY/issues/123` reference. Reuse an
+   existing commit/PR after a lost response. No workflow marker, trailer parser,
+   exact-parent/one-commit rule or extra final inspection agent is required.
+8. **Merge and verify closure (merge mode only).** Re-inspect the delivered PR,
+   default branch, exact reviewed head, mergeability, reviews and checks.
+   Merge using `--match-head-commit`, without protection bypass, auto-merge or
+   branch deletion. Verify MERGED and the actual merge commit before closing
+   a still-open issue as completed with an evidence comment. Re-read the issue
+   and require CLOSED. Reconcile lost responses against actual remote state.
+   Native denials, unresolved checks and failed closure are blockers, not success.
 
-## Local lab and live-system acceptance
+A normal small issue takes **seven native-agent calls**, or eight in explicit
+merge mode. Independent implementation adds only real specialist work and
+integration. Existing target requirements still apply, including deployment
+when the issue/project actually requires it; there is no universal deployment,
+cloud/IaC prerequisite, UI/UX role or deployed-SHA acceptance gate.
 
-Set `executionMode:"local"` to use authenticated local project tooling instead
-of GitHub Actions/remote CI. Set `acceptanceMode:"live-system"` to evaluate
-actual running behavior and required test results without requiring a deployed
-SHA or equivalent fingerprint. Local, deployment, E2E and review-assessment
-reports then need status, summary, findings and real evidence, but no application
-SHA. Missing or different fingerprints do not create repairs or restart
-development. Actual failed/unrun checks still cannot pass.
+## What changed
 
-Git commit IDs remain internal to source publication, PR review and native-stack
-membership; they are not proof of application status. The workflow reads the
-current feature head when opening the PR rather than requiring it to be an
-application identity artifact. Live-system journals use versioned `v4` keys;
-existing candidate-mode journals and the default behavior remain unchanged.
+The orchestration is reused from Collaboragent's optimized lightweight workflow,
+with project-neutral guidance, release/tooling prompts and this example's
+registration name. It does not import or require Collaboragent.
 
-These options do not add phases or readiness gates. DevOps chooses the smallest
-local deployment satisfying the requirements, discovers normal configuration
-and avoids invented operator-review flags, deployment fingerprints or additional
-path-approval schemas. Native authorization, protected shared resources and
-existing owner transport policies still apply. Neither option grants tooling
-or makes a denied operation successful.
+This **replaces**, rather than wraps, the older queue/stack example. Separate
+designer/planner and repeated validation/inspection handoffs are gone. One
+proposal review and one final code review remain; ordinary repairs do not
+restart design. There are no receipt files, full-tree/per-file manifests,
+fingerprint or timestamp freezes, requirement-quote matrices, deterministic CRUD
+allowlists, repair-issue machinery, fixed six-role fan-out, concurrent branch
+pushes, mandatory deployment stages, hosted Copilot-review polling or native
+stack membership gates. Git/test/PR results and existing project records are
+the evidence, not a new artifact protocol.
 
-## Stacked PR review and approval order
+## Install
 
-The workflow uses [GitHub stacked pull requests](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests),
-not just a branch chain with a Markdown table. It registers stacks through the
-documented [stacked pull requests REST API](https://docs.github.com/en/rest/pulls/stacks),
-using authenticated `gh api` and API version `2026-03-10`. No third-party service
-or additional CLI extension is required; this is the native stack feature also
-managed by `gh stack`.
-
-```text
-main <- feature/issue-7 <- feature/issue-9 <- feature/issue-11
-         first PR          second PR         third PR
-```
-
-Each feature PR therefore shows its incremental changes relative to the feature
-below it. With only one PR, there is no native stack yet. When the second PR is
-opened, the workflow creates the native stack with PR numbers ordered bottom-up;
-later PRs are appended to that same stack. Before writing delivery metadata, it
-reads membership back and verifies the trunk, order, open state, branch names
-and tested SHAs. Replays reuse existing membership rather than creating duplicate
-stacks. Missing API support/access, conflicting membership or unexpected stack
-changes fail explicitly; there is no branch-chain-only fallback.
-
-GitHub provides native stack navigation and stack-aware rules/CI. Every PR
-description additionally contains a workflow-managed **delivery** block with:
-
-- The full bottom-up approval/merge order, PR/issue links, base branch and position.
-- Its immediate predecessor, and whether its automated delivery gates are
-  complete or Copilot review/repair is still pending.
-- Machine-readable stack metadata used to validate an explicit continuation.
-
-The block is first published when the PR is opened, before requesting Copilot
-review, and marked ready only after that feature's gates pass. Existing human
-PR text outside the managed block is preserved. A pending PR is not an accepted
-stack tip and cannot admit the next feature.
-
-**Review and approve bottom-up; merge bottom-up as well.** The delivery table's
-human approval order is guidance, not an additional approval lock; GitHub's
-native stack rules and required checks still apply. The workflow never approves
-or merges PRs and never bypasses branch protection. It does not wait for human
-approval before taking the next issue. If a predecessor changes, is merged,
-closed or retargeted while work is running, the workflow stops rather than
-initiating a restack or reusing stale evidence. Dissolved or changed native
-membership also stops intake.
-
-Human merge/release ownership includes GitHub's native cascading rebases and
-rerunning affected checks/reviews after base or SHA changes. Automatic native
-rebasing does not validate this workflow's deployment/test evidence. This
-example never initiates a cascading rebase and is not a merge queue.
-Keep the queue curated: processing until
-empty can accumulate a large unmerged review backlog.
-
-### Architect-to-UI/UX-to-Web contract
-
-The structured Architect plan always includes `uiUx`:
-
-```json
-{
-  "enabled": true,
-  "reason": "The issue needs a new user interaction",
-  "task": "Design the issue's required screens and interaction states",
-  "files": ["docs/design/issue-123-ui-ux.md"],
-  "requirementIds": ["R1"]
-}
-```
-
-For a skipped step, use `enabled: false`, a nonempty `reason`, `task: ""`,
-`files: []` and `requirementIds: []`. There is no workflow input toggle:
-Architect decides from each issue. Enabled design requires active Web work,
-existing requirement IDs and exact artifact paths disjoint from Architect and
-all six implementation owners. UI/UX Designer owns only those artifacts, not
-Web implementation files, and can receive requirement-linked repair findings.
-Web and evaluation agents receive the authoritative artifact paths and revision.
-The design refines implementation of the quoted issue requirements; it cannot
-invent acceptance criteria or override repository policies.
-
-## Install and run
-
-Requires Node.js 24+, Git, authenticated `gh` with native stacked-PR REST API
-access on the target GitHub host, and a Copilot CLI version providing
-the experimental extension/workflow SDK. The API was checked against the
-[SDK workflow guide](https://github.com/github/copilot-sdk/blob/main/nodejs/docs/workflows.md)
-and CLI 1.0.105. The SDK import resolves inside Copilot; do not install an
-unrelated SDK version with npm.
+Requires Node.js 24+, Git, authenticated native `gh`, target project tooling and
+a Copilot CLI build providing the experimental extension/workflow SDK.
+The SDK import resolves inside Copilot; do not install another SDK with npm.
+The target's existing release convention must identify a canonical SemVer
+version. Models and optional runtime ceilings remain operator/harness choices;
+the workflow invents no limits or permission grants.
 
 ### AI installation contract
 
-An agent can fulfill a request such as:
+An agent can fulfill:
 
 > Install issue-driven-delivery from the example-workflows folder in
 > hoopdad/gh-dynamic-workflow-studio into my application repository. Install only.
 
-1. **Resolve source:** use the repository and revision requested by the user.
-   Read this README and `install.mjs` before executing trusted source code.
-   Clone the source or download this example folder; do not install Studio or
-   run the source repository's `npm install`. Report the source revision used.
-2. **Resolve target:** identify the application's existing Git repository root.
-   Ask if ambiguous. Do not use the example's source checkout as the target.
-3. **Payload:** the runtime consists of exactly `extension.mjs` and
-   `workflow.mjs`. Both are required; neither imports anything from Studio.
-   `install.mjs` is a dependency-free installation helper. README and
-   `*.test.mjs` are documentation/offline validation, not runtime dependencies.
-4. **Install:** execute the helper with an explicit target root. It syntax-checks
-   the runtime and copies only those two modules into
-   `<target>/.github/extensions/issue-driven-delivery/`. It does not create
-   commits, labels, issues, branches, PRs or deployments, run the workflow, edit
-   application instructions/configuration, or install dependencies.
-5. **Preserve target changes:** identical installations return `unchanged`.
-   Different files, extra files or linked destinations are refused. Do not
-   overwrite a different installation without inspecting it and obtaining
-   approval. There is intentionally no force/replace option.
-6. **Verify and report:** the helper returns JSON with `status`, `destination`
-   and `files`. Open/reload Copilot in the **target repository** and verify
-   `issue-driven-delivery` is registered. If the CLI/SDK is unavailable, report
-   that files were installed but registration could not be verified.
-   Installation is not permission to start delivery or configure GitHub.
+1. **Resolve source.** Use the requested repository/revision and read this
+   README and `install.mjs` before executing trusted source code. Clone or
+   download this folder; do not install Studio or run its npm install. Report
+   the source revision.
+2. **Resolve target.** Identify the application's existing Git root. Ask if
+   ambiguous; never infer the source checkout as the installation target.
+3. **Install only the runtime.** The dependency-free helper syntax-checks and
+   copies exactly `extension.mjs` and `workflow.mjs` into
+   `<target>/.github/extensions/issue-driven-delivery/`. It does not start
+   delivery, install dependencies, edit application instructions, configure
+   GitHub or create issues, labels, branches, commits, PRs or deployments.
+4. **Preserve target changes.** Identical installations return `unchanged`.
+   Different files, extra files and linked destinations are refused. Inspect
+   an existing installation and obtain approval before replacing it; the
+   helper intentionally has no force/replace option.
+5. **Verify and report.** Read the JSON `status`, `destination` and `files`.
+   Open/reload Copilot in the target repository and verify
+   `issue-driven-delivery` is registered. If unavailable, report installation
+   without claiming registration. Installation grants no delivery authority.
 
-The helper resolves source files relative to itself, so it works from any
-working directory and does not depend on a source Git checkout. Example:
+The helper resolves source files relative to itself and works from any cwd:
 
 ```powershell
 node "C:\temp\workflow-source\example-workflows\issue-driven-delivery\install.mjs" --target "C:\projects\my-app"
 ```
 
-### Configure and run only when separately authorized
+### Invoke only when authorized
 
-After installation, launch Copilot in the target application repository. When
-the user authorizes delivery, configure its queue there (reuse an existing
-`workflow:ready` label rather than recreating it):
+From Copilot in the dedicated **target issue checkout**, invoke the registered
+workflow with the actual repository and issue:
 
-```powershell
-Set-Location "C:\projects\my-app"
-gh label create workflow:ready --description "Approved issue ready for delivery"
-gh issue edit 123 --add-label workflow:ready
+```js
+run_dynamic_workflow({
+  name: "issue-driven-delivery",
+  args: {
+    repository: "OWNER/REPOSITORY",
+    issue: 123,
+    base: "main",
+    delivery: "pr"
+  }
+});
 ```
 
-Run **from that target repository**, whose `origin` must be its GitHub repository,
-never from the downloaded example/Studio checkout:
-
-```text
-copilot workflow run issue-driven-delivery --args '{"deploymentTarget":"approved-preview-environment"}'
-```
-
-For PowerShell versions with awkward native JSON quoting, use an input file:
+These are native Copilot tool arguments, not a PowerShell command.
+The equivalent CLI input is:
 
 ```json
 {
-  "deploymentTarget": "approved-preview-environment",
-  "issueNumber": 123,
-  "stackAfter": 0,
-  "worktreeRoot": "C:\\delivery-worktrees\\my-app",
-  "maxDeploymentAttempts": 3,
-  "reviewPolls": 60
+  "repository": "OWNER/REPOSITORY",
+  "issue": 123,
+  "base": "main",
+  "delivery": "pr"
 }
 ```
 
@@ -271,174 +158,86 @@ For PowerShell versions with awkward native JSON quoting, use an input file:
 copilot workflow run issue-driven-delivery --args "@delivery-input.json"
 ```
 
-`deploymentTarget` must name an actual, authorized environment with enough
-project configuration to resolve its endpoint and deployment command. It is not
-itself a provisioner or authorization for new resources. DevOps writes and runs
-only the provisioning/deployment required by explicit project/issue requirements
-and dependency constraints, within existing authorization. There is no universal
-Docker, registry, Bastion/SSH, Azure or Terraform prerequisite.
-No production authorization is implied.
-
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `deploymentTarget` | Required | Explicit authorized deployment environment/target |
-| `issueNumber` | `0` | Zero scans the queue; positive selects the first issue, then normal queue intake resumes |
-| `stackAfter` | `0` | Zero starts a stack; otherwise continue after this workflow-managed, open, latest accepted PR |
-| `readyLabel` | `workflow:ready` | Opt-in queue; removed per feature only after its gates and stack-order publication pass |
-| `worktreeRoot` | Application-specific sibling `.delivery-worktrees/<application-name>` | Absolute persistent parent outside the application checkout and OS temporary directory; paths remain isolated per run/issue/role/round |
-| `ownership` | Omitted | Optional `{testRunId,evidenceRoot}` for private run-bound ownership initialization before agents; existing accounting/assets are preserved and post-Develop empty ledgers cannot prove closure |
-| `maxRounds` | Uncapped | Only an explicitly supplied positive safe integer caps design/build/test/review repair rounds per issue |
-| `maxDeploymentAttempts` | `3` | Deployment/smoke attempts per round |
-| `reviewPolls` | `60` | Ten-second waits for a completed current-SHA review |
+| `repository` | Required | GitHub `OWNER/REPOSITORY`; enterprise managed-user owners with underscores are supported |
+| `issue` | Required | Positive integer identifying the single issue to deliver |
+| `base` | `main` | Destination branch; set explicitly for a different default branch |
+| `delivery` | `pr` | `local` verifies/reviews locally without commit/push/PR; `pr` publishes a verified PR; `merge` also merges and verifies issue closure |
 
-Deployment/review budgets and an optional explicit round cap are circuit breakers,
-not estimated credit/time budgets. Omitting `maxRounds` does not replace it with a
-larger arbitrary limit or change cancellation, permissions or runtime controls.
-The six-writer concurrency limit is declared in workflow metadata. Set runtime
-credit/agent/time limits appropriate to the whole queue and your permission
-policy. There is no issue-count cap: intake continues until the ready queue is
-empty, a feature blocks, or the runtime stops the run.
+Merge mode requires `base` to be the actual default branch. PR/local modes never
+merge or close the issue. Every PR includes its explicit closing reference,
+including reused PRs. No mode enables auto-merge or bypasses native permissions,
+branch protections, reviews or required checks.
 
-### Permissions and recovery
+### Results and recovery
 
-- Run only one delivery workflow per target repository/stack at a time. Queue selection
-  and GitHub labels are **not atomic claims or distributed locks**.
-- Agents inherit the launching session's permissions. Grant only the Git,
-  GitHub, build/test and deployment operations actually needed. Non-interactive
-  `copilot workflow run` cannot display permission prompts; configure grants
-  before running, or start interactively. Do not grant unrestricted tooling.
-  See [Building a bounded permission proposal](PERMISSIONS.md) for a reusable
-  inspection starter, proposal-only validator and Copilot-assisted authoring
-  instructions, plus a lab-specific `permissions.delivery-git.proposed.json`
-  for final review. It is not selected or applied automatically. Recursive
-  application-tree editor grants do not enforce shell filesystem containment.
-  These tools do not apply approvals or verify native inheritance.
-- The trusted extension itself invokes checkout-preserving Git fetch/show/ancestry checks
-  and `gh` issue/label/review and native stack REST operations directly. These subprocesses are not
-  agent permission prompts. Review the extension before trusting/loading it.
-  `gh` must already have the required repository access, including creating
-  issues/labels, pushing branches, opening PRs, reading/creating/extending native
-  stacks and requesting Copilot review.
-- Enable Copilot review on GitHub. Missing entitlement/access or a pending review
-  is not a pass. Review request uses `gh pr edit --add-reviewer "@copilot"`; the
-  submitted REST review must come from `copilot-pull-request-reviewer[bot]` and
-  match the candidate commit.
-- The authoritative issue title/body is snapshotted for the run. Scope changes
-  require a human update to the parent and a new run, not inferred requirements
-  from neighboring code or a reviewer's preferences.
-  Initial requirement quotes allow CRLF/LF equivalence only; wording, case and
-  spacing remain exact. Invalid quotes receive at most two requirements-only
-  corrections without republishing the design or changing other plan fields.
-  Validated plans and initial scoped issues are journaled for reproducible replay.
-  The workflow owns the canonical requirement IDs/quotes; repair output references
-  immutable IDs and omits quote text. Unknown requirement references still fail.
-  This version provides no legacy-journal migration; use it for fresh runs.
-- Repair issues use `delivery:issue-N`, a parent/branch marker and a stable
-  stage/requirement/owner/check key. A repeat failure comments on the existing
-  open issue. Only a passing rerun of its originating gate closes it. `DELIVERY`
-  issues describe operational blockers, not new application requirements.
-  Review/wait/budget issues can reach the review gate, but cannot remain open at
-  final acceptance. Unrecognized open scoped issues block completion.
-  A reported `DELIVERY` intervention stops at any report stage rather than
-  entering the application repair loop. The result retains actionable findings
-  and evidence (operation, principal/scope, native error/request ID and operator
-  fix), alongside the scoped GitHub issue; no external notification is implied.
-- The result explicitly distinguishes `idle`, `blocked` and `done` and includes
-  the ordered accepted `stack` plus `stackAfter` (its latest accepted PR number).
-  `idle` means no eligible issue/no stack; `done` means the ready queue is empty.
-  Neither status grants human approval or proves a merge/release. SDK task
-  completion alone is not delivery success. Inspect the returned result.
-  Failures/null reports throw; missing evidence never becomes a green default.
-- For a returned `blocked` result, fix the reported blocker and start a **new
-  invocation** with the blocked `issueNumber` and the returned `stackAfter`
-  (zero for a blocked bottom feature). It reuses the feature branch and scoped
-  issues without forgetting preceding features. Use the accepted predecessor,
-  not the blocked/pending PR itself. Continuation rejects old/non-tip stack
-  members, cycles, inconsistent metadata, foreign PRs and moved/merged/retargeted
-  parents; resolve these explicitly rather than starting a disconnected stack.
-  If a pending child is already registered in the native stack, recovery allows
-  only that single trailing child and only for its explicit `issueNumber`.
-  An older branch-chain-only stack with two or more PRs must be validated and
-  linked natively (for example with the documented `gh stack link`) before
-  continuation; a delivery table alone no longer qualifies.
-  For interrupted/error runs, prefer the CLI's resume mechanism: per-issue
-  journal keys, labels and worktree paths prevent one feature's results from
-  being reused for another. Completed issue deliveries are journaled as a unit,
-  so replay never republishes an earlier stack prefix over descendants. Remote
-  checks and idempotent stack publication still run before dequeueing, and final
-  queue completion revalidates the full native stack even on replay.
-  Returned blockers are retained; fix them in a new invocation, not by resuming
-  the blocked result. Start a new run rather than resuming an older workflow
-  definition after upgrading to this native-stack/UI/UX version (journal v3).
-- Worktrees live under the persistent `worktreeRoot` (or its documented sibling
-  default), separated by run, issue, role and round. Agents remove only their own
-  clean worktrees after successful pushes. Retain blocked work for recovery;
-  inspect its exact path before targeted cleanup. Never delete the shared root.
-- This is a prompt-governed example, not a sandbox or production delivery engine.
-  Ownership and requirement references are structurally checked; exact staging,
-  commands, test completeness, deployment receipts and comment dispositions
-  still depend on agents supplying truthful evidence. Runtime SHA checks cannot
-  independently prove what a remote environment runs. Each successful writer's
-  reported commit must be an ancestor of the shared remote candidate before tests
-  start; this verifies inclusion, not semantic correctness.
+Success returns `status: "completed"` and verified branch, base SHA, release
+version, delivery mode, head/URL and evidence. Local delivery has null head/URL.
+Merge mode additionally returns `mergeCommit` and `issueState: "CLOSED"`;
+PR/local modes leave those null. A genuine blocker returns
+`{status: "blocked", reason, branch, url}`, retaining a delivered PR URL when
+available. A returned orchestration function or finished agent is not proof of
+delivery; inspect the per-issue outcome.
 
-## Systems-thinking critique
+The native workflow tool returns a run ID while work continues. Observe with
+`dynamic_workflows_manage({operation: "inspect-run", runId})`; resume an unfinished
+compatible run with `run_dynamic_workflow({resumeFromRunId: runId})`. Do not
+blindly submit a new run to retry unknown partial effects.
 
-**Good starting point:** explicit handoffs separate design, implementation,
-verification and operations contexts. GitHub Issues retain a durable feedback
-loop. Narrow assignments avoid making every LLM read every other agent's logs.
-Requirement-linked defects restrain scope creep. Independent post-deploy E2E
-checks the integrated system instead of merely counting completed agents.
+Journal semantics are **`issue-driven-delivery-v5`**. Do not resume the old
+queue/stack/live-system definitions under this implementation. Old inputs
+(`deploymentTarget`, `issueNumber`, `readyLabel`, `stackAfter`, `worktreeRoot`,
+`ownership`, execution/acceptance modes and retry/poll budgets) are no longer
+accepted. Use fresh runs with the four documented inputs; there is no implicit
+queue continuation or stack registration.
 
-The optimization target should be **time to an accepted, working requirement**,
-not maximum agent utilization or minimum time to an individual commit.
+Completed SDK steps replay; unfinished native steps inspect actual Git/PR state
+before continuing, without receipt/marker/exact-parent proofs. A completed run
+returns its recorded outcome, not a fresh claim that its PR is still open or
+unchanged. Effects remain best-effort at least once, not transactional delivery.
+Cancellation cannot undo a completed GitHub effect.
 
-| System effect | Risk in the requested flow | Better production policy |
-| --- | --- | --- |
-| Shared branch is a coordination bottleneck | Even disjoint files race on push; rebasing can cause repeated rejection. Shared schemas/dependencies can break semantically without a textual conflict. | Keep parallel development, but use per-agent branches and one serialized integrator/publisher. Freeze interface contracts before fan-out. |
-| Local optimization shifts work downstream | Every tier can look finished while integration is broken; the Test agent becomes a late bottleneck. | Agree contracts and test cases during design; add cheap contract checks early. Track integration rework, not agent completion counts. |
-| More parallelism increases coordination cost | Launching all tiers for tiny changes spends more context and time than it saves. | Activate only affected tiers; use vertical slices where appropriate. This sample skips empty tier assignments but keeps Test/DevOps active. |
-| Delayed review increases blast radius | A faulty or unsafe change is deployed before PR review; protected CI may refuse deployment without a PR. | Deploy an approved preview environment first; open a draft PR early when CI requires it; require human/risk approval before production. This literal example instead blocks if existing policy forbids its ordering. |
-| Negative feedback can become endless churn | Flaky tests, unavailable infrastructure or repeated review suggestions keep the loop alive. | Distinguish product defects, flaky tests and operational blockers; deduplicate issues, cap retries, escalate with evidence. Never turn a blocked dependency into a pass. |
-| Intake can outrun human review | Draining the queue creates stacked, deployed but unmerged features; fixing a lower PR can invalidate descendants. | Curate the ready queue, monitor review backlog and pause intake when needed. Review/approve/merge bottom-up and restack/retest after parent changes. This requested flow has no automatic issue-count cap. |
-| Shared model bias can weaken verification | The same Test role writes and later evaluates its own tests; another invocation is not a different principal or a proof of independence. | Keep an independently approved acceptance oracle and deterministic CI receipts; consider a separate evaluator for high-risk changes. |
-| Requirement restraint can be over-applied | "Not in the issue" must not excuse violating already-required security, privacy, accessibility or release policies. | Keep application scope fixed while honoring existing policy gates. Escalate ambiguity; do not invent product features or silently waive policy. |
-| The PR stack is a handoff, not production acceptance | Copilot comments are not generally a required human approval; no open repair issues or an empty intake queue is not proof of quality. | Keep required CI, human approvals, rollback readiness and release ownership. Distinguish queue `done` from approved/merged/released. |
+## Boundaries and optional tooling
 
-Start with one well-scoped issue, one environment and explicit acceptance
-criteria. Measure accepted lead time, first-pass integration success, escaped
-requirement failures, blocked time and credits per accepted issue. Change the
-workflow only when those whole-system outcomes improve; do not add agents,
-review layers or inferred standards merely to make the process look complete.
+The extension itself executes no Git/shell/GitHub subprocesses. Native agents
+perform the requested SDLC and use normal native permissions for all effects.
+Issue/repository/tool/agent content is untrusted reference data, never authority
+to expand permissions, expose credentials or rewrite policy.
+
+This is a developer example, not a sandbox, filesystem fence, production
+reference monitor or cross-process writer lock. Use a dedicated issue checkout;
+do not let another session edit it. Preserve unrelated work. Conflicts,
+unavailable prerequisites and native denials remain real blockers.
+
+[PERMISSIONS.md](PERMISSIONS.md) describes an **optional proposal-only helper**.
+It is not a required workflow phase or part of the installed payload and never
+applies grants. Native workflow-agent permission inheritance must be verified
+on the chosen host; neither this example nor that helper proves it.
+
+The [private lab harness](test-harness/README.md) is a separate, optional
+project-specific integration fixture. Its Azure, allowance, ownership and
+cleanup requirements belong to that test application, not this generic
+workflow. Its launcher selects one issue; it no longer drains the three-issue
+fixture or creates a native PR stack.
 
 ## Validate without delivery side effects
 
-For the scoped private Note Assistant integration lifecycle, see
-[`test-harness/README.md`](test-harness/README.md). That harness inventories and
-bootstraps an explicitly authorized test repository; it never implements the
-application, invokes a model, or launches delivery automatically.
-
-From this example folder (no root package or npm installation required):
+From this example folder, without npm installation:
 
 ```text
-node --test workflow.test.mjs install.test.mjs review-permissions.test.mjs
+node --test workflow.test.mjs install.test.mjs review-permissions.test.mjs test-harness\harness.test.mjs
 node --check extension.mjs
 node --check workflow.mjs
 node --check install.mjs
 node --check review-permissions.mjs
 ```
 
-Workflow tests use fake agents and GitHub responses: they check orchestration, disjoint
-ownership, requirement/evidence guards, parallel failure, repair/review loops,
-deployment retries, stale-SHA gates and paginated review/issue handling. They
-verify optional designer selection/skipping, authoritative Web handoffs,
-artifact ownership/publication and designer repair/failure gates. They
-also cover multi-issue queue draining, ordered PR bodies, pending versus
-accepted stack tips, continuation, stale parents and publication failure replay,
-plus native stack create/append/readback, idempotency, membership drift and
-API failure handling.
-Installer tests create disposable local Git repositories, verify portability and exact
-payload, preserve modified installations, and reject unsafe/ambiguous targets.
-Permission-preview tests cover explicit argument data, rejected broad/unsafe
-requests, link/traversal guards and absence of settings or delivery side effects.
-Tests do **not** create GitHub issues/branches/PRs, request a real review, or deploy.
+The harness suite additionally requires PowerShell 7.2+. Workflow tests mock
+native agents and effects: seven-call delivery, proposal review, ordinary versus
+design repair routing, related config changes, dependency scheduling, release
+refresh, local/PR/merge separation, verified closure, blockers, cancellation and
+lost-effect recovery. Installer tests use disposable local repositories to
+verify exact payload and preservation. Permission/harness checks remain offline.
+These checks do not prove live delivery, native permission inheritance or a
+deployed application, and never create real GitHub issues/PRs or cloud resources.

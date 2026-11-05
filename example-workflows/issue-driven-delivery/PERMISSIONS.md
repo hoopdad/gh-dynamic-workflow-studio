@@ -2,8 +2,9 @@
 
 Keep authorization project-specific and reviewable. The supplied
 `permissions.example.json` is an **initial inspection starter**, not permission
-for an entire Architect stage or delivery. Architect also creates a worktree,
-commits and publishes a design; those mutations are deliberately not included.
+for an entire workflow or delivery. Branch/worktree creation, edits and
+publication are deliberately not included. This helper is optional, separate
+from the workflow and not a required approval phase.
 Docker, registries, Terraform, Azure and Bastion/SSH are not universal grants.
 
 `review-permissions.mjs` validates a proposal and prints native argument **data**.
@@ -25,8 +26,8 @@ node .\review-permissions.mjs `
   --evidence "C:\private\delivery-run-123"
 ```
 
-These are illustrative paths, not discovered defaults. Prefer the actual assigned
-worktree over a shared worktree parent. If the runtime has not assigned its path,
+These are illustrative paths, not discovered defaults. Prefer the actual issue
+worktree over a shared worktree parent. If its path has not been selected,
 keep it unresolved for review rather than substituting a home/shared directory.
 The helper only reads profile/filesystem metadata and prints JSON to stdout.
 It does not create missing directories or verify repository origin, credentials,
@@ -90,8 +91,9 @@ was not proof that its proposed trailing-separator form worked.
 Future files and generated role/run subdirectories need no filename inventory.
 `recursive` must be a boolean; omit it or use `false` for exact-file requests.
 Recursive evidence grants are rejected so a whole evidence directory cannot
-replace its named output files. This does not relax Architect's exact disjoint
-file assignments or allow writers to modify peer worktrees.
+replace its named output files. These optional permission selectors are not a
+workflow CRUD allowlist. Concurrent specialists still avoid editing each other's
+files; necessary shared changes go to the integration owner.
 
 These are native editor-tool approval proposals, **not an OS filesystem fence**.
 Shell file operations and container daemons have separate capabilities;
@@ -180,23 +182,24 @@ Proceed only after a compatible native parser/selector fix is verified, or
 through a supported interactive workflow session with specific per-operation
 approval. Do not burn further fresh delivery cycles on an unchanged blocker.
 
-For a delivery proposal, review each role separately: writers need only assigned
-file operations and Git publication; Test needs the chosen build/test runners;
-DevOps needs the chosen IaC, image publication, deployment, rollback and owned
-cleanup operations; Architect needs PR publication and complete review reads.
-Command-family entries do not enforce role isolation. Terraform, imperative
+For a delivery proposal, review the actual work: implementation needs relevant
+file operations and test runners; release preparation needs the repository's
+verification/build tooling; delivery needs Git/PR publication and verification.
+Deployment and cleanup permissions apply only when the target issue/project
+requires those operations. Command-family entries do not enforce role isolation. Terraform, imperative
 Azure CLI, kubectl and azd are conditional alternatives, not authority to
 introduce competing stacks or mutate the same resources through multiple owners.
 Do not guess future app filenames, generated worktree identities or private
-endpoints. Bind recursive source access to the application-specific directory;
-Architect still assigns exact files within it. Resolve additional exact evidence
+endpoints. Bind recursive source access to the application-specific directory.
+Resolve additional exact evidence
 outputs and origins from the approved plan and actual metadata. Cleanup script
 execution still needs its actual reviewed capability; generic interpreters are
-not a substitute. The trusted GitHub adapter now paginates all submitted,
-nondismissed review bodies and all PR inline comments/replies, including replies
-from other review IDs, and supplies them directly to Architect as untrusted
-evidence. The bot/current-SHA completion gate remains unchanged; unreadable or
-incomplete data cannot be assessed as a pass. No agent `gh api` grant is needed.
+not a substitute. There is no trusted subprocess GitHub adapter, hosted bot
+review gate or mandatory `gh api` grant in the lightweight workflow. Its agents
+use native Git/gh tools under normal permissions; code review is an independent
+native agent examining the final diff. Explicit merge mode additionally needs
+the actual merge/issue-close capabilities. No permissions are inferred or
+automatically applied from a workflow mode.
 
 URL entries are Copilot child-process tool approvals, not GitHub repository
 network configuration or Azure network/RBAC enforcement. Actual DNS, routing,
@@ -213,13 +216,13 @@ scripts. On an access failure, stop with an actionable operator alert: operation
 principal ID, resource scope, native error and correlation/request ID, plus the
 specific prerequisite to fix. Do not leak credentials, silently self-grant or
 blindly retry authorization failures. Reuse the existing failure/report path;
-the workflow files the finding and returns its evidence with `blocked`, stopping
-further repair/intake for a `DELIVERY` blocker at any report stage. This does not
+the workflow returns the native agent's reason with `status:"blocked"`, retaining
+a delivered PR URL when available. It does not file separate repair issues. This does not
 add a notification system or claim an alert was sent elsewhere.
 
-Where private lab transport is required, Architect assigns DevOps an
+Where private lab transport is required, the implementation owner prepares an
 application-side registration/handoff packet, not an owner-repository change
-or new transport. DevOps derives the actual deployed resource identity,
+or new transport. The owner derives the actual deployed resource identity,
 private ingress/addresses, exact HTTPS/WSS hosts and start URLs, necessary
 API/redirect origins and read-only readiness operation, following the existing
 owner's service-extension contract. Use only a registered explicit selection
@@ -234,7 +237,7 @@ can have side effects through arguments, configuration, scripts or helpers.
 For example, a Git inspection command is not guaranteed read-only. Native
 command rules do not enforce a particular branch, repository, Terraform plan,
 cloud resource or script hash. Keep native path/URL checks, deny rules, managed
-policies, existing identity/RBAC limits and workflow ownership guards intact.
+policies, existing identity/RBAC limits and concurrent task ownership intact.
 Filesystem metadata can change after a preview.
 
 ## Have Copilot help build the proposal
@@ -293,10 +296,9 @@ The preview itself never installs grants or edits configuration. The launcher's
 explicit option passes reviewed requests; existing deny rules, managed policy,
 identity/RBAC and native path/URL checks remain in force.
 
-The trusted workflow extension also invokes Git and `gh` directly for its
-orchestration. Those subprocesses are **outside agent-tool approval prompts**;
-this profile neither authorizes nor restricts them. Review the extension before
-trusting/loading it and retain the actual GitHub identity's repository limits.
+The lightweight workflow extension invokes no Git/gh subprocesses itself.
+Its native agents use the launching session's normal tool permissions;
+retain the actual GitHub identity's repository limits and verify inheritance.
 
 CLI 1.0.105 documents `--allow-tool`, `--allow-url`, `--add-dir` and native
 per-request approval prompts (`copilot help permissions` and `copilot --help`).
@@ -309,7 +311,7 @@ verified the helper-rendered full profile: nested/top-level source edits, exact
 evidence write, selected reference read and cwd/Git checks succeeded; an editor
 write in readable CWD but outside all write grants was denied. This verifies
 those capabilities, not every deployment command, platform or future CLI build.
-The inspection starter still cannot authorize a complete
-Architect stage or guarantee unattended completion.
+The inspection starter still cannot authorize complete issue delivery or
+guarantee unattended completion.
 
 See [GitHub's CLI usage and approval documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli).

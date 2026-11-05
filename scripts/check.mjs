@@ -14,7 +14,7 @@ async function check(directory) {
         }
     }
 }
-for (const directory of ["src", "bin", "scripts", "test"]) await check(path.join(root, directory));
+for (const directory of ["src", "bin", "scripts", "test", "com.github.copilot"]) await check(path.join(root, directory));
 for (const file of ["extension.mjs", "playwright.config.mjs"]) {
     const result = spawnSync(process.execPath, ["--check", path.join(root, file)], { stdio: "inherit" });
     if (result.status !== 0) throw new Error(`Syntax check failed: ${file}`);

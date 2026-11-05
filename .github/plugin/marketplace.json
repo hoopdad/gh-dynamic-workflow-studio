@@ -1,0 +1,13 @@
+{
+  "name": "dynamic-workflow-studio",
+  "owner": {
+    "name": "hoopdad"
+  },
+  "plugins": [
+    {
+      "name": "dynamic-workflow-studio",
+      "description": "Observe live and past GitHub Copilot Dynamic Workflows in a read-only local canvas.",
+      "source": "./"
+    }
+  ]
+}

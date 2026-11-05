@@ -39,10 +39,10 @@ export class WorkflowStore {
         const invoke = () => promisify(execFile)("node", [
             fileURLToPath(new URL("./observe-runs.mjs", import.meta.url)), source, app, sessionId,
         ]);
-        const set = (runs, detail = { ...run, status: "completed", stale: false, result: { status: "done" } }, warnings = []) =>
+        const set = (runs, detail = { ...run, status: "completed", stale: false, result: { status: "completed" } }, warnings = []) =>
             writeFile(fixture, JSON.stringify({ list: { runs, warnings }, detail }));
         await set([run]);
-        assert.deepEqual(JSON.parse((await invoke()).stdout).result, { status: "done" });
+        assert.deepEqual(JSON.parse((await invoke()).stdout).result, { status: "completed" });
         await set([run], { ...run, status: "error", stale: false, result: null, error: "Actual failure" });
         assert.equal(JSON.parse((await invoke()).stdout).status, "error");
         await set([run, { ...run, runId: "other-run" }]);

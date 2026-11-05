@@ -5,17 +5,23 @@ using GitHub or Azure require authenticated `gh` or isolated lab Azure CLI acces
 respectively. Docker and other delivery prerequisites are workflow-owned project
 requirements, not supervisor launch prerequisites. No package installation is needed.
 Setup and teardown never build the application or invoke a model.
-The lifecycle entry point invokes the installed workflow; workflow agents alone
-own application implementation.
+The lifecycle entry point invokes the installed workflow for **one selected
+issue**; workflow agents alone own application implementation. Setup retains
+the three ordered A/B/C issue fixtures, but the generated input selects A only
+with `{repository,issue,base,delivery:"pr"}`. B/C are separate follow-up work,
+not delivered by this invocation. There is no queue drain or native stack.
+The bootstrap README contains the canonical initial SemVer release version.
 
-New harness inputs select local tooling and live-system acceptance automatically:
-`executionMode:"local"` and `acceptanceMode:"live-system"`. The test application
+Local tooling and running-behavior acceptance are requirements of this test
+application, not generic workflow execution/acceptance options. The test application
 may keep web, API and agent as logical components in one container, without a
 mandatory frontend framework or Terraform stack. Existing model, storage,
 privacy, telemetry and aggregate-allowance requirements remain.
 Application acceptance uses current behavior and actual test results, not a
 deployed SHA or equivalent fingerprint. Git/runtime authorization identities
 remain separate from application acceptance.
+The generic workflow adds no Azure, model-allowance, inventory, transport or
+cleanup requirements; the controls below are existing lab-specific requirements.
 
 Each applied lifecycle writes `run-record.json` beside its original receipts,
 recording issue links, native identities, outcomes, findings and execution/cleanup
@@ -23,9 +29,9 @@ errors. A process exit is not evidence of an intervention-free run; review the
 native event record for that conclusion. Historical requirements and failed
 receipts are never rewritten when the next test definition changes.
 
-For a final autonomy test ending with a running app, pass
+For a selected-issue autonomy test ending with a running app, pass
 `-RetainSuccessfulApplication` to the fully qualified lifecycle script.
-Only successful delivery retains the app: the lifecycle says `delivered` and
+Only successful selected-issue PR delivery retains the app: the lifecycle says `delivered` and
 cleanup says `deferred`, never verified. Preserve ownership and allowance state
 for live assessment and subsequent scoped teardown before another clean test.
 Failed execution or completion still takes the existing guarded cleanup path.
@@ -58,8 +64,9 @@ node --check example-workflows\issue-driven-delivery\test-harness\observe-runs.m
 ## Private configuration and staged setup
 
 Keep configuration, manifest, state and sanitized receipts outside every checkout
-and disposable worktree. Use a unique explicit `testRunId` for a new experiment;
-the same ID and manifest are mandatory for setup, delivery ownership and teardown.
+and disposable worktree. These are harness records, not workflow receipt gates.
+Use a unique explicit `testRunId` for a new experiment; the same ID and manifest
+are mandatory for setup, application-owned external assets and teardown.
 Do not renew/reset model allowances by choosing a new ID during recovery.
 Protect the evidence directory with the current user's normal private ACLs.
 Never put credentials, auth profiles, raw model payloads or Terraform state in Git.
@@ -166,11 +173,11 @@ must be reconciled through the original deployment owner, never deleted by reset
 Reset uses enumerated leaf removals, normal commits and exact disposable worktree/
 branch/issue identities. It never removes a checkout, `.git`, shared parent,
 default branch or session root, rewrites history or force-pushes. Bootstrap
-contains only README, instructions/index, ignores, nonsecret target/queue inputs
+contains only README, instructions/index, ignores, nonsecret target/issue inputs
 and the installer-copied runtime. Source must match the pinned commit and runtime
 hashes. Issues are created A/B/C oldest-first with stable run markers. Reruns reuse
 exact matching open issues; changed requirements or duplicate markers fail closed.
-It commits/pushes the queue normally; it does not launch delivery.
+It commits/pushes the fixture inputs normally; it does not launch delivery.
 Partial failures are retained, never silently retried. Re-inspect before rerunning;
 identity/HEAD drift requires explicit reconciliation, not an automatic reset.
 
@@ -213,30 +220,30 @@ Set-Location C:\work\lab-greeting-agent
 copilot workflow run issue-driven-delivery --args "@.github\delivery-input.json" --result-file "C:\private\<run>\workflow-result.json"
 ```
 
-No `maxRounds` is generated. Preserve normal native permissions; unavailable
+No queue, stack, ownership, worktree-root, execution/acceptance-mode or retry-budget
+options are passed to the generic workflow. Preserve normal native permissions; unavailable
 permissions are blockers, never a reason to grant unrestricted tooling.
 Record `delivery.started`, owning session/run identity and `delivery.stopped`
 truthfully in the manifest. Errored/interrupted runs resume only in the owning
-session; completed blocked results use the documented continuation path.
+session. A completed blocked result retains its reason; inspect actual work and
+resolve its effects before authorizing a fresh issue invocation.
 
 ## Delivery-owned cleanup protocol
 
 Before or alongside **every external-asset** mutation, workflow agents must atomically publish
 `delivery.ownershipPath` outside disposable paths:
 
-The generated workflow input opts into runtime ownership initialization with
-`ownership:{testRunId,evidenceRoot}`. Before the first agent, the runtime
-exclusively publishes the initial zero-asset ledger with the native run identity
-and its exact hashed Git worktree scope. Existing/mismatched ledgers are never
-replaced. This is prospective accounting, not a retroactive empty inventory.
-Agents preserve the `accounting` fields when adding real assets and cleanup
-metadata. Before Develop, the runtime marks external operations as possible;
-an empty inventory after that marker fails closed, even on an early failure.
-Design/UI/UX worktrees are retained and listed separately, not misreported as
-deleted cloud/process assets. No application cleanup implementation is prebuilt.
-That prospective Git scope already accounts for local source/design files and
-Git commits/branches; staging or pushing a design does not require an inventory
-rewrite. Keep Git evidence in Git, not invented external-asset entries.
+The lightweight runtime does **not** initialize an ownership ledger or mark
+external operations. Application agents implement the inventory/cleanup
+requirements from the selected issue and `.github/deployment-target.json`
+under native permissions. Existing inventories and optional legacy `accounting`
+fields must be preserved; legacy accounting still receives its existing teardown
+checks. Missing inventory after a started run remains unknown closure, never a
+synthetic empty-ledger pass. Retain the actual issue worktree for recovery;
+there is no runtime-assigned hashed worktree tree. Do not misreport source
+files or Git commits as deleted cloud/process assets. No application cleanup
+implementation is prebuilt. Keep Git evidence in Git, not per-commit external
+inventory rewrites.
 Private evidence grants name exact files, not a writable evidence directory.
 Do not create ad hoc sibling temporary files to publish a design inventory.
 For actual external-asset updates, `deployment-target.json.ownershipPendingPath`
@@ -307,7 +314,7 @@ After acceptance evidence is saved and owning workflow has stopped:
 Repeat with the same manifest safely; absent assets remain absent. Missing
 inventory after delivery started, changed cleanup source, unresolved assets,
 shared drift or uncertain process closure are blockers, not success.
-The receipt survives under `evidenceRoot`; repository, issues, PRs/native stack
+The receipt survives under `evidenceRoot`; repository, issues and PRs
 and shared logs are preserved. No shared resource group/VNet/Foundry/model/
 storage/vault/monitoring/Bastion/VM deletion or name-prefix-only deletion exists.
 Compare selected nonsecret shared configuration, not expected new telemetry.
@@ -326,7 +333,7 @@ inventoried reset; the repository, `.git` and history remain intact.
 ```
 
 Default Inspect only describes the cycle. Apply performs Inventory/Reset/
-Bootstrap/Issues, one fresh workflow invocation, and guarded teardown in
+Bootstrap/Issues, one fresh single-issue workflow invocation, and guarded teardown in
 `finally`, including after setup or execution failure. An existing unexecuted
 setup manifest is allowed; an executed attempt, cycle receipt or unresolved
 cycle lock prevents silently starting another invocation. There is no automatic
@@ -359,7 +366,8 @@ deny rules/policies and the already-executed-cycle guards remain unchanged.
 
 `lifecycle-receipt.json` preserves separate setup, execution and teardown verdicts,
 including both errors if execution and cleanup fail. Exit success requires all
-three stages to pass; a non-success workflow result is not delivery success.
+three stages to pass; only a workflow result with `status:"completed"` counts as
+selected-issue delivery, not completion of all three fixtures or a merge.
 Teardown is always attempted, not forced past ownership/process/state guards.
 Missing ownership after a started workflow remains blocked, even before an
 application was deployed. Hard termination/power loss still requires recovery

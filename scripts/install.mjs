@@ -8,7 +8,10 @@ const source = fileURLToPath(new URL("../", import.meta.url));
 export const extensionName = "dynamic-workflow-studio";
 const marker = ".dynamic-workflow-studio.json";
 const files = [
-    "extension.mjs", "package.json", "npm-shrinkwrap.json", "README.md", "LICENSE",
+    "extension.mjs", "package.json", "npm-shrinkwrap.json", "README.md", "manual.md", "LICENSE", "plugin.json",
+    "com.github.copilot/extensions/dynamic-workflow-studio/extension.mjs",
+    "com.github.copilot/extensions/dynamic-workflow-studio/copilot-extension.json",
+    ".github/plugin/marketplace.json",
     "bin/dynamic-workflow-studio.mjs", "scripts/install.mjs", "docs/studio.md",
     ...["extension.mjs", "server.mjs", "directory-picker.mjs", "store.mjs", "usage.mjs", "observed.mjs",
         "index.html", "app.mjs", "style.css"].map((file) => `src/${file}`),

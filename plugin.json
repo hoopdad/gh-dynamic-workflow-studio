@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dynamic-workflow-studio",
+  "version": "0.2.0",
+  "description": "Observe live and past GitHub Copilot Dynamic Workflows in a read-only local canvas.",
+  "homepage": "https://github.com/hoopdad/gh-dynamic-workflow-studio",
+  "repository": "https://github.com/hoopdad/gh-dynamic-workflow-studio",
+  "license": "MIT"
+}

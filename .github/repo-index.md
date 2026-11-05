@@ -3,7 +3,13 @@
 ## Areas and boundaries
 
 - `src/extension.mjs`: Copilot canvas registration, lazy-loads `server.mjs`.
-  Root `extension.mjs` is the installed discovery entry point.
+  Root `extension.mjs` is the manually installed discovery entry point.
+  `plugin.json` declares the Agent Plugins 1.0 package; the
+  `com.github.copilot/extensions/dynamic-workflow-studio/` wrapper and descriptor
+  register the same canvas in plugin installations, with no copied runtime or
+  automatically installed/run delivery workflow. Plugin and npm versions agree.
+  `.github/plugin/marketplace.json` lists the root package in the
+  `dynamic-workflow-studio` marketplace; README uses marketplace installation.
 - `src/server.mjs`: tokenized loopback HTTP server shared by canvas and CLI.
 - `src/directory-picker.mjs`: native Windows/macOS/Linux folder selection;
   the protected project-pick endpoint atomically swaps session scope.
@@ -17,43 +23,52 @@
   its selection persists across refreshes and run changes.
 - `bin/dynamic-workflow-studio.mjs`: terminal server and installation commands.
 - `scripts/install.mjs`: standalone distribution manifest, scoped replacement,
-  production dependencies and project/global registration.
+  production dependencies and project/global registration. Includes plugin
+  discovery files and `manual.md` in detached distributions.
 - `scripts/build.mjs`: copies distribution into `dist/dynamic-workflow-studio`.
 - `test/`: Node regression tests and Playwright `studio.spec.mjs`.
-- `example-workflows/`: catalog of standalone workflows to install into other
-  repositories, not workflows used by Studio. `issue-driven-delivery/extension.mjs`
-  registers the SDK workflow; `workflow.mjs` owns orchestration, GitHub adapter,
-  structural ownership/requirement guards and role prompts. Its README covers
-  the AI installation contract, concurrent same-branch writers and critique.
-  Architect assigns project-required provisioning/deployment implementation to
-  DevOps exclusively, including Terraform when required. Technologies and
-  prerequisites come from project requirements, not universal workflow gates.
-  Architect explicitly selects/skips UI/UX Designer per issue. When enabled,
-  its disjoint, published design artifacts gate the six-writer fan-out and are
-  authoritative for Web within issue scope, architecture contracts and policy.
-  The runner drains ready issues sequentially, scopes journals/worktrees per
-  issue, stacks PR bases on accepted predecessor branches and publishes ordered
-  approval/merge metadata in PR bodies. `githubIO` registers native GitHub
-  stacks via versioned REST create/add/read endpoints through `gh api` once
-  two PRs exist; metadata tables supplement, not replace, native membership.
-  `stackAfter` validates continuation;
-  pending or changed parent PRs cannot silently admit a new feature.
-  Its dependency-free `install.mjs` requires an explicit target Git root and
-  copies only the two runtime modules; it never runs the workflow or changes
-  GitHub. All example tests live alongside it (`workflow.test.mjs`,
-  `install.test.mjs`, `review-permissions.test.mjs`); they are not part of
-  Studio's root test/check commands.
-  `PERMISSIONS.md`, `permissions.example.json` and `review-permissions.mjs`
-  provide Copilot-assisted authoring and a dependency-free proposal-only preview
-  of explicit tool/path/URL requests. They never apply approvals, change native
-  settings or launch delivery; trusted extension subprocesses remain a separate
-  boundary. They are not added to the installer payload.
+  `plugin.test.mjs` loads the detached plugin with an SDK registration stub and
+  verifies actual server/snapshot/close behavior without source-checkout imports.
+- `example-workflows/`: standalone examples installed into other repositories,
+  never workflows used by Studio. `issue-driven-delivery/extension.mjs` registers
+  `deliveryWorkflow` from adjacent `workflow.mjs`. The lightweight runtime reuses
+  Collaboragent's optimized orchestration with project-neutral guidance,
+  canonical release source and existing target verification/build tooling.
+  One explicit `{repository,issue,base?,delivery?}` invocation delivers one issue:
+  combined proposal/plan -> one proposal review -> implementation/tests ->
+  release/verification -> one final code review -> combined commit/push/PR
+  verification. `delivery` is `pr` by default, `local` for no publication, or
+  explicit `merge` for reviewed-head merge and verified issue closure.
+  Dependency-ready specialists are optional; small changes use one owner.
+  CRUD paths are guidance, ordinary repairs return to implementation, and only
+  scope/architecture/risk findings return to design. No receipt/fingerprint
+  protocol, requirement matrices, mandatory deployment, fixed role fan-out,
+  ready queue, hosted-review polling, native-stack adapter or runtime
+  subprocesses. Existing native permissions remain the effect authority.
+  Journal keys are `issue-driven-delivery-v5`; old queue/stack inputs/journals
+  are incompatible. `install.mjs` still copies exactly two runtime modules,
+  never starts work and preserves different existing installations.
+  Colocated Node tests cover orchestration, installer and optional permission
+  preview; they are outside Studio's root checks/distribution.
+  `PERMISSIONS.md`, profiles and `review-permissions.mjs` are optional,
+  proposal-only native tool/path/URL previews, not runtime approval gates.
+  `test-harness/` is a separate private lab fixture with existing scoped reset,
+  asset accounting and cleanup controls. Setup retains A/B/C fixtures but
+  generates the single-issue contract selecting A; the launcher accepts
+  `completed`, not old queue `done`. Application agents, not the generic
+  runtime, own required external-asset inventory/cleanup. Its Node wrapper
+  invokes PowerShell offline lifecycle checks.
 
 ## Navigation and checks
 
-Start with `README.md` for install/launch; `docs/studio.md` covers UI semantics.
+Start with `README.md` for the plugin-first four-step quickstart. `manual.md`
+owns installation/update variations, workflow inputs/recovery, standalone browser
+mode and development. `docs/studio.md` owns UI/observation semantics.
 Runtime source has no fleet-controller dependencies. Keep distribution paths in
-`scripts/install.mjs` aligned with runtime additions and npm `files`.
+`scripts/install.mjs` aligned with runtime additions, plugin discovery and npm
+`files`. The marketplace points at the repository root; the native
+canvas is CLI-specific, not a portable MCP server. Avoid duplicate manual/plugin
+registrations. `scripts/check.mjs` checks the plugin wrapper as well as root code.
 `npm-shrinkwrap.json` is intentionally distributable; restore with `npm ci`.
 Use `npm run check`, `npm test`, `npm run test:ui`, `npm run build`.
 CI runs those checks on Windows, Ubuntu and macOS with Node 24.
@@ -66,6 +81,26 @@ recorded runs, not installed source. The HTTP API exposes project scope,
 snapshot/progress reads and discovery refresh; no Design/preview/source APIs.
 
 ## Freshness
+
+2026-11-05: reviewed from `2ce1fa5` plus the lightweight example changes for
+plugin-first onboarding, release 0.2.0 and main integration. Added root
+`plugin.json`, `.github/plugin/marketplace.json`,
+`com.github.copilot/extensions/dynamic-workflow-studio/extension.mjs`
+and `copilot-extension.json`, `manual.md` and `test/plugin.test.mjs`.
+README now holds only the three-sentence Install overview, four-step quickstart
+and reference links. Manual preserves installation/launch/development variations.
+Updated distribution/npm manifests, syntax checks and UI-guide navigation;
+no new npm dependencies, workflow auto-registration or Studio control-plane change.
+The existing integration branch is a descendant of main and can be integrated
+without rewriting history; actual branch/delivery state is verified at push time.
+
+2026-11-05: reviewed from `2ce1fa5` for replacement of the issue-driven delivery
+example with Collaboragent's lightweight workflow. Updated runtime, offline
+tests, example/catalog/permission guides and dependent lab input/result handoff.
+No paths added/deleted, npm dependencies, Studio runtime/distribution changes or
+installation. The existing two-module installer and optional proposal helper
+remain separate from delivery. Earlier queue/stack/UI/UX/runtime-ownership
+descriptions below are historical and superseded by this single-issue v5 flow.
 
 2026-10-27: reviewed through `504044a` and the activity-picker refinements.
 Removed `src/source.mjs`, `test/source.test.mjs` and `test/fixtures/loops.yml`,

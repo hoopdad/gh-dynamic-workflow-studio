@@ -207,11 +207,12 @@ try {
             $github = Join-Path $manifest.repositoryRoot '.github'
             [void][IO.Directory]::CreateDirectory($github)
             [IO.File]::WriteAllText((Join-Path $manifest.repositoryRoot 'README.md'),
-                "# Note Assistant`n`nPrivate, synthetic-note integration test $TestRunId. Application delivery is exclusively issue-driven-delivery.`n")
+                "# Note Assistant`n`nRelease version: 0.0.0`n`nPrivate, synthetic-note integration test $TestRunId. Application delivery is exclusively issue-driven-delivery.`n")
             [IO.File]::WriteAllText((Join-Path $manifest.repositoryRoot '.gitignore'),
                 ".azure-cli/`n.delivery/`n.terraform/`n*.tfstate*`n*.tfplan`n*.tfvars`n.env*`nnode_modules/`n__pycache__/`n")
             [IO.File]::WriteAllText((Join-Path $github 'copilot-instructions.md'), @"
-Build only through issue-driven-delivery. Read .github/deployment-target.json and the three parent issues.
+Build only through issue-driven-delivery. Read .github/deployment-target.json and the selected parent issue.
+The README Release version is the canonical SemVer source. Use the application's own verification/build tooling.
 Reference existing shared services without adoption, recreation or renumbering. Do not copy other workloads' approvals.
 Use containerized agents, not Foundry Hosted Agents. Use managed identity; do not read unrelated secrets.
 Keep GSA, SSH trust, TLS verification, enterprise policy, system DNS/proxy/routes and hosts files unchanged.
@@ -302,10 +303,8 @@ Delivery source: $($manifest.sourceRevision). Test run: $TestRunId.
         if (@($recorded.number | Select-Object -Unique).Count -ne 3 -or
             $recorded[0].number -ge $recorded[1].number -or $recorded[1].number -ge $recorded[2].number) { throw 'Initial queue order/count mismatch' }
         Write-LabJson (Join-Path $manifest.repositoryRoot '.github\delivery-input.json') @{
-            deploymentTarget = $manifest.deploymentTarget; issueNumber = $recorded[0].number
-            stackAfter = 0; worktreeRoot = $manifest.worktreeRoot
-            ownership = @{ testRunId = $TestRunId; evidenceRoot = $manifest.evidenceRoot }
-            executionMode = 'local'; acceptanceMode = 'live-system'
+            repository = $manifest.repository; issue = $recorded[0].number
+            base = $manifest.defaultBranch; delivery = 'pr'
         }
         $manifest.stages.issues = $true
         [void](Invoke-LabCommand git @('-C', $manifest.repositoryRoot, 'add', '--', '.github/delivery-input.json'))
